@@ -7,6 +7,7 @@
 
 
 #include "ChunkDataCallback.h"
+#include "EffectID.h"
 
 
 
@@ -20,6 +21,7 @@ class cChunkStay;
 class cChunk;
 class cPlayer;
 class cBeaconEntity;
+class cBrewingstandEntity;
 class cChestEntity;
 class cDispenserEntity;
 class cDropperEntity;
@@ -43,6 +45,7 @@ typedef cChunk *                           cChunkPtr;
 typedef cItemCallback<cEntity>             cEntityCallback;
 typedef cItemCallback<cBlockEntity>        cBlockEntityCallback;
 typedef cItemCallback<cBeaconEntity>       cBeaconCallback;
+typedef cItemCallback<cBrewingstandEntity> cBrewingstandCallback;
 typedef cItemCallback<cChestEntity>        cChestCallback;
 typedef cItemCallback<cDispenserEntity>    cDispenserCallback;
 typedef cItemCallback<cDropperEntity>      cDropperCallback;
@@ -73,7 +76,6 @@ public:
 	void BroadcastBlockAction(int a_BlockX, int a_BlockY, int a_BlockZ, char a_Byte1, char a_Byte2, BLOCKTYPE a_BlockType, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastBlockBreakAnimation(UInt32 a_EntityID, int a_BlockX, int a_BlockY, int a_BlockZ, char a_Stage, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastBlockEntity(int a_BlockX, int a_BlockY, int a_BlockZ, const cClientHandle * a_Exclude);
-	void BroadcastChunkData(int a_ChunkX, int a_ChunkZ, cChunkDataSerializer & a_Serializer, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastCollectEntity(const cEntity & a_Entity, const cPlayer & a_Player, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastCollectPickup(const cPickup & a_Pickup, const cPlayer & a_Player, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastDestroyEntity(const cEntity & a_Entity, const cClientHandle * a_Exclude = nullptr);
@@ -90,7 +92,7 @@ public:
 	void BroadcastParticleEffect(const AString & a_ParticleName, float a_SrcX, float a_SrcY, float a_SrcZ, float a_OffsetX, float a_OffsetY, float a_OffsetZ, float a_ParticleData, int a_ParticleAmount, cClientHandle * a_Exclude = nullptr);
 	void BroadcastRemoveEntityEffect (const cEntity & a_Entity, int a_EffectID, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastSoundEffect(const AString & a_SoundName, double a_X, double a_Y, double a_Z, float a_Volume, float a_Pitch, const cClientHandle * a_Exclude = nullptr);
-	void BroadcastSoundParticleEffect(int a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data, const cClientHandle * a_Exclude = nullptr);
+	void BroadcastSoundParticleEffect(const EffectID a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastSpawnEntity(cEntity & a_Entity, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastThunderbolt(int a_BlockX, int a_BlockY, int a_BlockZ, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastUseBed(const cEntity & a_Entity, int a_BlockX, int a_BlockY, int a_BlockZ);
@@ -98,13 +100,14 @@ public:
 	/** Sends the block entity, if it is at the coords specified, to a_Client */
 	void SendBlockEntity(int a_BlockX, int a_BlockY, int a_BlockZ, cClientHandle & a_Client);
 	
-	/** a_Player rclked block entity at the coords specified, handle it */
-	void UseBlockEntity(cPlayer * a_Player, int a_X, int a_Y, int a_Z);
+	/** a_Player rclked block entity at the coords specified, handle it
+	returns true if the use was successful, return false to use the block as a "normal" block */
+	bool UseBlockEntity(cPlayer * a_Player, int a_X, int a_Y, int a_Z);
 	
 	/** Calls the callback for the chunk specified, with ChunkMapCS locked; returns false if the chunk doesn't exist, otherwise returns the same value as the callback */
 	bool DoWithChunk(int a_ChunkX, int a_ChunkZ, cChunkCallback & a_Callback);
 
-	/** Calls the callback for the chunk at the block position specified, with ChunkMapCS locked; returns false if the chunk doesn't exist, otherwise returns the same value as the callback **/
+	/** Calls the callback for the chunk at the block position specified, with ChunkMapCS locked; returns false if the chunk doesn't exist, otherwise returns the same value as the callback */
 	bool DoWithChunkAt(Vector3i a_BlockPos, std::function<bool(cChunk &)> a_Callback);
 
 	/** Wakes up simulators for the specified block */
@@ -247,6 +250,10 @@ public:
 	Returns true if all block entities processed, false if the callback aborted by returning true. */
 	bool ForEachBlockEntityInChunk(int a_ChunkX, int a_ChunkZ, cBlockEntityCallback & a_Callback);  // Lua-accessible
 
+	/** Calls the callback for brewingstand in the specified chunk.
+	Returns true if all brewingstands processed, false if the callback aborted by returning true. */
+	bool ForEachBrewingstandInChunk(int a_ChunkX, int a_ChunkZ, cBrewingstandCallback & a_Callback);  // Lua-accessible
+
 	/** Calls the callback for each chest in the specified chunk.
 	Returns true if all chests processed, false if the callback aborted by returning true. */
 	bool ForEachChestInChunk(int a_ChunkX, int a_ChunkZ, cChestCallback & a_Callback);  // Lua-accessible
@@ -274,6 +281,9 @@ public:
 	/** Calls the callback for the beacon at the specified coords.
 	Returns false if there's no beacon at those coords, true if found. */
 	bool DoWithBeaconAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBeaconCallback & a_Callback);  // Lua-acessible
+
+	/** Calls the callback for the brewingstand at the specified coords; returns false if there's no brewingstand at those coords, true if found */
+	bool DoWithBrewingstandAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBrewingstandCallback & a_Callback);  // Lua-acessible
 
 	/** Calls the callback for the chest at the specified coords.
 	Returns false if there's no chest at those coords, true if found. */
@@ -345,6 +355,9 @@ public:
 	
 	/** Calls the callback for each chunk in the coords specified (all cords are inclusive). Returns true if all chunks have been processed successfully */
 	bool ForEachChunkInRect(int a_MinChunkX, int a_MaxChunkX, int a_MinChunkZ, int a_MaxChunkZ, cChunkDataCallback & a_Callback);
+
+	/** Calls the callback for each loaded chunk. Returns true if all chunks have been processed successfully */
+	bool ForEachLoadedChunk(std::function<bool(int, int)> a_Callback);
 	
 	/** Writes the block area into the specified coords. Returns true if all chunks have been processed. Prefer cBlockArea::Write() instead. */
 	bool WriteBlockArea(cBlockArea & a_Area, int a_MinBlockX, int a_MinBlockY, int a_MinBlockZ, int a_DataTypes);
@@ -509,7 +522,7 @@ private:
 	/** The cChunkStay descendants that are currently enabled in this chunkmap */
 	cChunkStays m_ChunkStays;
 
-	std::auto_ptr<cAllocationPool<cChunkData::sChunkSection> > m_Pool;
+	std::unique_ptr<cAllocationPool<cChunkData::sChunkSection> > m_Pool;
 
 	cChunkPtr GetChunk      (int a_ChunkX, int a_ChunkZ);  // Also queues the chunk for loading / generating if not valid
 	cChunkPtr GetChunkNoGen (int a_ChunkX, int a_ChunkZ);  // Also queues the chunk for loading if not valid; doesn't generate

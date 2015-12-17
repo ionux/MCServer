@@ -17,16 +17,16 @@ public:
 	{
 	}
 	
-	virtual void OnUse(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace, int a_CursorX, int a_CursorY, int a_CursorZ) override
+	virtual bool OnUse(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace, int a_CursorX, int a_CursorY, int a_CursorZ) override
 	{
 		// Flip the ON bit on / off using the XOR bitwise operation
 		NIBBLETYPE Meta = (a_ChunkInterface.GetBlockMeta(a_BlockX, a_BlockY, a_BlockZ) ^ 0x08);
 
 		a_ChunkInterface.SetBlockMeta(a_BlockX, a_BlockY, a_BlockZ, Meta);
 		a_WorldInterface.WakeUpSimulators(a_BlockX, a_BlockY, a_BlockZ);
-		a_WorldInterface.GetBroadcastManager().BroadcastSoundEffect("random.click", (double)a_BlockX, (double)a_BlockY, (double)a_BlockZ, 0.5f, (Meta & 0x08) ? 0.6f : 0.5f);
+		a_WorldInterface.GetBroadcastManager().BroadcastSoundEffect("random.click", static_cast<double>(a_BlockX), static_cast<double>(a_BlockY), static_cast<double>(a_BlockZ), 0.5f, (Meta & 0x08) ? 0.6f : 0.5f);
+		return true;
 	}
-
 
 	virtual void ConvertToPickups(cItems & a_Pickups, NIBBLETYPE a_BlockMeta) override
 	{
@@ -34,12 +34,10 @@ public:
 		a_Pickups.push_back(cItem(E_BLOCK_LEVER, 1, 0));
 	}
 
-
 	virtual bool IsUseable(void) override
 	{
 		return true;
 	}
-	
 	
 	virtual bool GetPlacementBlockTypeMeta(
 		cChunkInterface & a_ChunkInterface, cPlayer * a_Player,
@@ -52,7 +50,6 @@ public:
 		a_BlockMeta = LeverDirectionToMetaData(a_BlockFace);
 		return true;
 	}
-
 
 	inline static NIBBLETYPE LeverDirectionToMetaData(eBlockFace a_Dir)
 	{
@@ -73,7 +70,6 @@ public:
 		#endif
 	}
 
-
 	inline static eBlockFace BlockMetaDataToBlockFace(NIBBLETYPE a_Meta)
 	{
 		switch (a_Meta & 0x7)
@@ -93,7 +89,6 @@ public:
 			}
 		}
 	}
-
 
 	virtual bool CanBeAt(cChunkInterface & a_ChunkInterface, int a_RelX, int a_RelY, int a_RelZ, const cChunk & a_Chunk) override
 	{
@@ -128,7 +123,6 @@ public:
 		return false;
 	}
 
-
 	virtual NIBBLETYPE MetaRotateCCW(NIBBLETYPE a_Meta) override
 	{
 		switch (a_Meta)
@@ -143,7 +137,6 @@ public:
 		}
 	}
 
-
 	virtual NIBBLETYPE MetaRotateCW(NIBBLETYPE a_Meta) override
 	{
 		switch (a_Meta)
@@ -156,6 +149,12 @@ public:
 
 			default:  return super::MetaRotateCW(a_Meta);  // Wall Rotation
 		}
+	}
+
+	virtual ColourID GetMapBaseColourID(NIBBLETYPE a_Meta) override
+	{
+		UNUSED(a_Meta);
+		return 0;
 	}
 } ;
 

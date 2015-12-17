@@ -220,7 +220,7 @@ void cIncrementalRedstoneSimulator::SimulateChunk(std::chrono::milliseconds a_Dt
 				case E_BLOCK_DARK_OAK_DOOR:
 				case E_BLOCK_JUNGLE_DOOR:
 				case E_BLOCK_SPRUCE_DOOR:
-				case E_BLOCK_WOODEN_DOOR:
+				case E_BLOCK_OAK_DOOR:
 				case E_BLOCK_IRON_DOOR:
 				{
 					HandleDoor(dataitr->first.x, dataitr->first.y, dataitr->first.z);
@@ -229,7 +229,7 @@ void cIncrementalRedstoneSimulator::SimulateChunk(std::chrono::milliseconds a_Dt
 				case E_BLOCK_ACACIA_FENCE_GATE:
 				case E_BLOCK_BIRCH_FENCE_GATE:
 				case E_BLOCK_DARK_OAK_FENCE_GATE:
-				case E_BLOCK_FENCE_GATE:
+				case E_BLOCK_OAK_FENCE_GATE:
 				case E_BLOCK_JUNGLE_FENCE_GATE:
 				case E_BLOCK_SPRUCE_FENCE_GATE:
 				{
@@ -444,7 +444,7 @@ void cIncrementalRedstoneSimulator::HandleFenceGate(int a_RelBlockX, int a_RelBl
 			if ((MetaData & 0x4) == 0)
 			{
 				m_Chunk->SetMeta(a_RelBlockX, a_RelBlockY, a_RelBlockZ, MetaData | 0x4);
-				m_Chunk->BroadcastSoundParticleEffect(1003, BlockX, a_RelBlockY, BlockZ, 0);
+				m_Chunk->BroadcastSoundParticleEffect(EffectID::SFX_RANDOM_DOOR_OPEN_CLOSE, BlockX, a_RelBlockY, BlockZ, 0);
 			}
 			SetPlayerToggleableBlockAsSimulated(a_RelBlockX, a_RelBlockY, a_RelBlockZ, true);
 		}
@@ -456,7 +456,7 @@ void cIncrementalRedstoneSimulator::HandleFenceGate(int a_RelBlockX, int a_RelBl
 			if ((MetaData & 0x4) != 0)
 			{
 				m_Chunk->SetMeta(a_RelBlockX, a_RelBlockY, a_RelBlockZ, MetaData & ~0x04);
-				m_Chunk->BroadcastSoundParticleEffect(1003, BlockX, a_RelBlockY, BlockZ, 0);
+				m_Chunk->BroadcastSoundParticleEffect(EffectID::SFX_RANDOM_DOOR_OPEN_CLOSE, BlockX, a_RelBlockY, BlockZ, 0);
 			}
 			SetPlayerToggleableBlockAsSimulated(a_RelBlockX, a_RelBlockY, a_RelBlockZ, false);
 		}
@@ -645,7 +645,8 @@ void cIncrementalRedstoneSimulator::FindAndPowerBorderingWires(std::vector<std::
 
 		if (
 			(Neighbour->GetBlock(AdjustedPos) == E_BLOCK_REDSTONE_WIRE) &&
-			(!cBlockInfo::FullyOccupiesVoxel(a_EntryChunk->GetBlock(a_EntryRelBlockPosition.x, a_EntryRelBlockPosition.y + 1, a_EntryRelBlockPosition.z))) &&
+			(!cBlockInfo::FullyOccupiesVoxel(a_EntryChunk->GetBlock(a_EntryRelBlockPosition.x, a_EntryRelBlockPosition.y + 1, a_EntryRelBlockPosition.z)) ||
+			(a_EntryChunk->GetBlock(a_EntryRelBlockPosition.x, a_EntryRelBlockPosition.y + 1, a_EntryRelBlockPosition.z) == E_BLOCK_GLOWSTONE)) &&
 			(MyPower > 1) && (MyPower > IsWirePowered(AdjustedPos, Neighbour)))
 		{
 			PowerBorderingWires(a_PotentialWireList, a_EntryRelBlockPosition, a_EntryChunk, AdjustedPos, Neighbour, MyPower);
@@ -665,7 +666,8 @@ void cIncrementalRedstoneSimulator::FindAndPowerBorderingWires(std::vector<std::
 
 		if (
 			(Neighbour->GetBlock(AdjustedPos) == E_BLOCK_REDSTONE_WIRE) &&
-			(!cBlockInfo::FullyOccupiesVoxel(Neighbour->GetBlock(AdjustedPos.x, AdjustedPos.y + 1, AdjustedPos.z))) &&
+			(!cBlockInfo::FullyOccupiesVoxel(Neighbour->GetBlock(AdjustedPos.x, AdjustedPos.y + 1, AdjustedPos.z)) ||
+			(Neighbour->GetBlock(AdjustedPos.x, AdjustedPos.y + 1, AdjustedPos.z) == E_BLOCK_GLOWSTONE)) &&
 			(MyPower > 1) && (MyPower > IsWirePowered(AdjustedPos, Neighbour)))
 		{
 			PowerBorderingWires(a_PotentialWireList, a_EntryRelBlockPosition, a_EntryChunk, AdjustedPos, Neighbour, MyPower);
@@ -880,11 +882,11 @@ void cIncrementalRedstoneSimulator::HandlePiston(int a_RelBlockX, int a_RelBlock
 
 	if (IsPistonPowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ, m_Chunk->GetMeta(a_RelBlockX, a_RelBlockY, a_RelBlockZ) & 0x7))  // We only want the bottom three bits (4th controls extended-ness)
 	{
-		GetHandlerCompileTime<E_BLOCK_PISTON>::type::ExtendPiston(BlockX, a_RelBlockY, BlockZ, &this->m_World);
+		GetHandlerCompileTime<E_BLOCK_PISTON>::type::ExtendPiston(Vector3i(BlockX, a_RelBlockY, BlockZ), &this->m_World);
 	}
 	else
 	{
-		GetHandlerCompileTime<E_BLOCK_PISTON>::type::RetractPiston(BlockX, a_RelBlockY, BlockZ, &this->m_World);
+		GetHandlerCompileTime<E_BLOCK_PISTON>::type::RetractPiston(Vector3i(BlockX, a_RelBlockY, BlockZ), &this->m_World);
 	}
 }
 
@@ -946,7 +948,7 @@ void cIncrementalRedstoneSimulator::HandleTNT(int a_RelBlockX, int a_RelBlockY, 
 
 	if (AreCoordsPowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ))
 	{
-		m_Chunk->BroadcastSoundEffect("game.tnt.primed", (double)BlockX, (double)a_RelBlockY, (double)BlockZ, 0.5f, 0.6f);
+		m_Chunk->BroadcastSoundEffect("game.tnt.primed", static_cast<double>(BlockX), static_cast<double>(a_RelBlockY), static_cast<double>(BlockZ), 0.5f, 0.6f);
 		m_Chunk->SetBlock(a_RelBlockX, a_RelBlockY, a_RelBlockZ, E_BLOCK_AIR, 0);
 		this->m_World.SpawnPrimedTNT(BlockX + 0.5, a_RelBlockY + 0.5, BlockZ + 0.5);  // 80 ticks to boom
 	}
@@ -961,7 +963,7 @@ void cIncrementalRedstoneSimulator::HandleDoor(int a_RelBlockX, int a_RelBlockY,
 	int BlockX = (m_Chunk->GetPosX() * cChunkDef::Width) + a_RelBlockX;
 	int BlockZ = (m_Chunk->GetPosZ() * cChunkDef::Width) + a_RelBlockZ;
 
-	typedef GetHandlerCompileTime<E_BLOCK_WOODEN_DOOR>::type DoorHandler;
+	typedef GetHandlerCompileTime<E_BLOCK_OAK_DOOR>::type DoorHandler;
 
 	if (AreCoordsPowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ))
 	{
@@ -971,7 +973,7 @@ void cIncrementalRedstoneSimulator::HandleDoor(int a_RelBlockX, int a_RelBlockY,
 			if (!DoorHandler::IsOpen(ChunkInterface, BlockX, a_RelBlockY, BlockZ))
 			{
 				DoorHandler::SetOpen(ChunkInterface, BlockX, a_RelBlockY, BlockZ, true);
-				m_Chunk->BroadcastSoundParticleEffect(1003, BlockX, a_RelBlockY, BlockZ, 0);
+				m_Chunk->BroadcastSoundParticleEffect(EffectID::SFX_RANDOM_DOOR_OPEN_CLOSE, BlockX, a_RelBlockY, BlockZ, 0);
 			}
 			SetPlayerToggleableBlockAsSimulated(a_RelBlockX, a_RelBlockY, a_RelBlockZ, true);
 		}
@@ -984,7 +986,7 @@ void cIncrementalRedstoneSimulator::HandleDoor(int a_RelBlockX, int a_RelBlockY,
 			if (DoorHandler::IsOpen(ChunkInterface, BlockX, a_RelBlockY, BlockZ))
 			{
 				DoorHandler::SetOpen(ChunkInterface, BlockX, a_RelBlockY, BlockZ, false);
-				m_Chunk->BroadcastSoundParticleEffect(1003, BlockX, a_RelBlockY, BlockZ, 0);
+				m_Chunk->BroadcastSoundParticleEffect(EffectID::SFX_RANDOM_DOOR_OPEN_CLOSE, BlockX, a_RelBlockY, BlockZ, 0);
 			}
 			SetPlayerToggleableBlockAsSimulated(a_RelBlockX, a_RelBlockY, a_RelBlockZ, false);
 		}
@@ -1157,16 +1159,25 @@ void cIncrementalRedstoneSimulator::HandlePressurePlate(int a_RelBlockX, int a_R
 		case E_BLOCK_STONE_PRESSURE_PLATE:
 		{
 			// MCS feature - stone pressure plates can only be triggered by players :D
-			cPlayer * a_Player = this->m_World.FindClosestPlayer(Vector3f(BlockX + 0.5f, (float)a_RelBlockY, BlockZ + 0.5f), 0.5f, false);
+			cPlayer * a_Player = this->m_World.FindClosestPlayer(Vector3f(BlockX + 0.5f, static_cast<float>(a_RelBlockY), BlockZ + 0.5f), 0.5f, false);
 
+			NIBBLETYPE Meta = m_Chunk->GetMeta(a_RelBlockX, a_RelBlockY, a_RelBlockZ);
 			if (a_Player != nullptr)
 			{
+				if (Meta == E_META_PRESSURE_PLATE_RAISED)
+				{
+					m_Chunk->BroadcastSoundEffect("random.click", static_cast<double>(BlockX) + 0.5, static_cast<double>(a_RelBlockY) + 0.1, static_cast<double>(BlockZ) + 0.5, 0.3F, 0.5F);
+				}
 				m_Chunk->SetMeta(a_RelBlockX, a_RelBlockY, a_RelBlockZ, 0x1);
 				SetAllDirsAsPowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ);
-				SetDirectionLinkedPowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ, BLOCK_FACE_YM, a_MyType);
+				SetDirectionLinkedPowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ, BLOCK_FACE_YM);
 			}
 			else
 			{
+				if (Meta == E_META_PRESSURE_PLATE_DEPRESSED)
+				{
+					m_Chunk->BroadcastSoundEffect("random.click", static_cast<double>(BlockX) + 0.5, static_cast<double>(a_RelBlockY) + 0.1, static_cast<double>(BlockZ) + 0.5, 0.3F, 0.6F);
+				}
 				m_Chunk->SetMeta(a_RelBlockX, a_RelBlockY, a_RelBlockZ, 0x0);
 				SetSourceUnpowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ, m_Chunk);
 			}
@@ -1189,7 +1200,7 @@ void cIncrementalRedstoneSimulator::HandlePressurePlate(int a_RelBlockX, int a_R
 				virtual bool Item(cEntity * a_Entity) override
 				{
 					Vector3f EntityPos = a_Entity->GetPosition();
-					Vector3f BlockPos(m_X + 0.5f, (float)m_Y, m_Z + 0.5f);
+					Vector3f BlockPos(m_X + 0.5f, static_cast<float>(m_Y), m_Z + 0.5f);
 					double Distance = (EntityPos - BlockPos).Length();
 
 					if (Distance <= 0.5)
@@ -1201,7 +1212,7 @@ void cIncrementalRedstoneSimulator::HandlePressurePlate(int a_RelBlockX, int a_R
 
 				bool GetPowerLevel(unsigned char & a_PowerLevel) const
 				{
-					a_PowerLevel = std::min(m_NumberOfEntities, MAX_POWER_LEVEL);
+					a_PowerLevel = static_cast<unsigned char>(std::min(m_NumberOfEntities, MAX_POWER_LEVEL));
 					return (a_PowerLevel > 0);
 				}
 
@@ -1222,17 +1233,17 @@ void cIncrementalRedstoneSimulator::HandlePressurePlate(int a_RelBlockX, int a_R
 			{
 				if (Meta == E_META_PRESSURE_PLATE_RAISED)
 				{
-					m_Chunk->BroadcastSoundEffect("random.click", (double)BlockX + 0.5, (double)a_RelBlockY + 0.1, (double)BlockZ + 0.5, 0.3F, 0.5F);
+					m_Chunk->BroadcastSoundEffect("random.click", static_cast<double>(BlockX) + 0.5, static_cast<double>(a_RelBlockY) + 0.1, static_cast<double>(BlockZ) + 0.5, 0.3F, 0.5F);
 				}
 				m_Chunk->SetMeta(a_RelBlockX, a_RelBlockY, a_RelBlockZ, E_META_PRESSURE_PLATE_DEPRESSED);
 				SetAllDirsAsPowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ, Power);
-				SetDirectionLinkedPowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ, BLOCK_FACE_YM, a_MyType);
+				SetDirectionLinkedPowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ, BLOCK_FACE_YM, Power);
 			}
 			else
 			{
 				if (Meta == E_META_PRESSURE_PLATE_DEPRESSED)
 				{
-					m_Chunk->BroadcastSoundEffect("random.click", (double)BlockX + 0.5, (double)a_RelBlockY + 0.1, (double)BlockZ + 0.5, 0.3F, 0.6F);
+					m_Chunk->BroadcastSoundEffect("random.click", static_cast<double>(BlockX) + 0.5, static_cast<double>(a_RelBlockY) + 0.1, static_cast<double>(BlockZ) + 0.5, 0.3F, 0.6F);
 				}
 				m_Chunk->SetMeta(a_RelBlockX, a_RelBlockY, a_RelBlockZ, E_META_PRESSURE_PLATE_RAISED);
 				SetSourceUnpowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ, m_Chunk);
@@ -1257,7 +1268,7 @@ void cIncrementalRedstoneSimulator::HandlePressurePlate(int a_RelBlockX, int a_R
 				virtual bool Item(cEntity * a_Entity) override
 				{
 					Vector3f EntityPos = a_Entity->GetPosition();
-					Vector3f BlockPos(m_X + 0.5f, (float)m_Y, m_Z + 0.5f);
+					Vector3f BlockPos(m_X + 0.5f, static_cast<float>(m_Y), m_Z + 0.5f);
 					double Distance = (EntityPos - BlockPos).Length();
 
 					if (Distance <= 0.5)
@@ -1269,7 +1280,7 @@ void cIncrementalRedstoneSimulator::HandlePressurePlate(int a_RelBlockX, int a_R
 
 				bool GetPowerLevel(unsigned char & a_PowerLevel) const
 				{
-					a_PowerLevel = std::min((int)ceil(m_NumberOfEntities / 10.f), MAX_POWER_LEVEL);
+					a_PowerLevel = static_cast<Byte>(std::min(static_cast<int>(ceil(m_NumberOfEntities / 10.f)), MAX_POWER_LEVEL));
 					return (a_PowerLevel > 0);
 				}
 
@@ -1290,17 +1301,17 @@ void cIncrementalRedstoneSimulator::HandlePressurePlate(int a_RelBlockX, int a_R
 			{
 				if (Meta == E_META_PRESSURE_PLATE_RAISED)
 				{
-					m_Chunk->BroadcastSoundEffect("random.click", (double)BlockX + 0.5, (double)a_RelBlockY + 0.1, (double)BlockZ + 0.5, 0.3F, 0.5F);
+					m_Chunk->BroadcastSoundEffect("random.click", static_cast<double>(BlockX) + 0.5, static_cast<double>(a_RelBlockY) + 0.1, static_cast<double>(BlockZ) + 0.5, 0.3F, 0.5F);
 				}
 				m_Chunk->SetMeta(a_RelBlockX, a_RelBlockY, a_RelBlockZ, E_META_PRESSURE_PLATE_DEPRESSED);
 				SetAllDirsAsPowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ, Power);
-				SetDirectionLinkedPowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ, BLOCK_FACE_YM, a_MyType);
+				SetDirectionLinkedPowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ, BLOCK_FACE_YM, Power);
 			}
 			else
 			{
 				if (Meta == E_META_PRESSURE_PLATE_DEPRESSED)
 				{
-					m_Chunk->BroadcastSoundEffect("random.click", (double)BlockX + 0.5, (double)a_RelBlockY + 0.1, (double)BlockZ + 0.5, 0.3F, 0.6F);
+					m_Chunk->BroadcastSoundEffect("random.click", static_cast<double>(BlockX) + 0.5, static_cast<double>(a_RelBlockY) + 0.1, static_cast<double>(BlockZ) + 0.5, 0.3F, 0.6F);
 				}
 				m_Chunk->SetMeta(a_RelBlockX, a_RelBlockY, a_RelBlockZ, E_META_PRESSURE_PLATE_RAISED);
 				SetSourceUnpowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ, m_Chunk);
@@ -1325,7 +1336,7 @@ void cIncrementalRedstoneSimulator::HandlePressurePlate(int a_RelBlockX, int a_R
 				virtual bool Item(cEntity * a_Entity) override
 				{
 					Vector3f EntityPos = a_Entity->GetPosition();
-					Vector3f BlockPos(m_X + 0.5f, (float)m_Y, m_Z + 0.5f);
+					Vector3f BlockPos(m_X + 0.5f, static_cast<float>(m_Y), m_Z + 0.5f);
 					double Distance = (EntityPos - BlockPos).Length();
 
 					if (Distance <= 0.5)
@@ -1357,17 +1368,17 @@ void cIncrementalRedstoneSimulator::HandlePressurePlate(int a_RelBlockX, int a_R
 			{
 				if (Meta == E_META_PRESSURE_PLATE_RAISED)
 				{
-					m_Chunk->BroadcastSoundEffect("random.click", (double)BlockX + 0.5, (double)a_RelBlockY + 0.1, (double)BlockZ + 0.5, 0.3F, 0.5F);
+					m_Chunk->BroadcastSoundEffect("random.click", static_cast<double>(BlockX) + 0.5, static_cast<double>(a_RelBlockY) + 0.1, static_cast<double>(BlockZ) + 0.5, 0.3F, 0.5F);
 				}
 				m_Chunk->SetMeta(a_RelBlockX, a_RelBlockY, a_RelBlockZ, E_META_PRESSURE_PLATE_DEPRESSED);
 				SetAllDirsAsPowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ);
-				SetDirectionLinkedPowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ, BLOCK_FACE_YM, a_MyType);
+				SetDirectionLinkedPowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ, BLOCK_FACE_YM);
 			}
 			else
 			{
 				if (Meta == E_META_PRESSURE_PLATE_DEPRESSED)
 				{
-					m_Chunk->BroadcastSoundEffect("random.click", (double)BlockX + 0.5, (double)a_RelBlockY + 0.1, (double)BlockZ + 0.5, 0.3F, 0.6F);
+					m_Chunk->BroadcastSoundEffect("random.click", static_cast<double>(BlockX) + 0.5, static_cast<double>(a_RelBlockY) + 0.1, static_cast<double>(BlockZ) + 0.5, 0.3F, 0.6F);
 				}
 				m_Chunk->SetMeta(a_RelBlockX, a_RelBlockY, a_RelBlockZ, E_META_PRESSURE_PLATE_RAISED);
 				SetSourceUnpowered(a_RelBlockX, a_RelBlockY, a_RelBlockZ, m_Chunk);
@@ -1473,7 +1484,7 @@ void cIncrementalRedstoneSimulator::HandleTrappedChest(int a_RelBlockX, int a_Re
 
 		unsigned char GetPowerLevel(void) const
 		{
-			return std::min(m_NumberOfPlayers, MAX_POWER_LEVEL);
+			return static_cast<unsigned char>(std::min(m_NumberOfPlayers, MAX_POWER_LEVEL));
 		}
 
 	private:

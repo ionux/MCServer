@@ -16,20 +16,40 @@
 
 
 
+// fwd:
+class cVillagePiecePool;
+
+
+
+
+
 class cVillageGen :
 	public cGridStructGen
 {
 	typedef cGridStructGen super;
 public:
-	cVillageGen(int a_Seed, int a_GridSize, int a_MaxOffset, int a_MaxDepth, int a_MaxSize, int a_MinDensity, int a_MaxDensity, cBiomeGenPtr a_BiomeGen, cTerrainHeightGenPtr a_HeightGen);
+	/** Creates a new instance of the generator with the specified parameters. */
+	cVillageGen(
+		int a_Seed,
+		int a_GridSize,
+		int a_MaxOffset,
+		int a_MaxDepth,
+		int a_MaxSize,
+		int a_MinDensity, int a_MaxDensity,
+		cBiomeGenPtr a_BiomeGen,
+		cTerrainHeightGenPtr a_HeightGen,
+		int a_SeaLevel,
+		const AStringVector & a_PrefabsToLoad
+	);
 
 protected:
 	class cVillage;  // fwd: VillageGen.cpp
+	typedef std::vector<SharedPtr<cVillagePiecePool> > cVillagePiecePools;
 
 	/** The noise used for generating random numbers */
 	cNoise m_Noise;
 	
-	/** Maximum depth of the generator tree*/
+	/** Maximum depth of the generator tree */
 	int m_MaxDepth;
 	
 	/** Maximum size, in X / Z blocks, of the village (radius from the origin) */
@@ -46,6 +66,9 @@ protected:
 	
 	/** The underlying height generator, used to position the prefabs crossing chunk borders */
 	cTerrainHeightGenPtr m_HeightGen;
+
+	/** All available prefab sets. Each village gets one of these chosen randomly. */
+	cVillagePiecePools m_Pools;
 
 
 	// cGridStructGen overrides:

@@ -39,6 +39,8 @@ void cPig::GetDrops(cItems & a_Drops, cEntity * a_Killer)
 
 void cPig::OnRightClicked(cPlayer & a_Player)
 {
+	super::OnRightClicked(a_Player);
+
 	if (m_bIsSaddled)
 	{
 		if (m_Attachee != nullptr)
@@ -108,7 +110,7 @@ bool cPig::DoTakeDamage(TakeDamageInfo & a_TDI)
 	if (a_TDI.DamageType == dtLightning)
 	{
 		Destroy();
-		m_World->SpawnMob(GetPosX(), GetPosY(), GetPosZ(), mtZombiePigman);
+		m_World->SpawnMob(GetPosX(), GetPosY(), GetPosZ(), mtZombiePigman, false);
 		return true;
 	}
 	return true;

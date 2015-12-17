@@ -13,6 +13,7 @@
 #include "zlib/zlib.h"
 #include "Defines.h"
 #include "BlockEntities/BeaconEntity.h"
+#include "BlockEntities/BrewingstandEntity.h"
 #include "BlockEntities/ChestEntity.h"
 #include "BlockEntities/DispenserEntity.h"
 #include "BlockEntities/DropperEntity.h"
@@ -199,9 +200,9 @@ void cChunk::MarkRegenerating(void)
 	SetPresence(cpQueued);
 
 	// Tell all clients attached to this chunk that they want this chunk:
-	for (cClientHandleList::iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto ClientHandle : m_LoadedByClient)
 	{
-		(*itr)->AddWantedChunk(m_PosX, m_PosZ);
+		ClientHandle->AddWantedChunk(m_PosX, m_PosZ);
 	}  // for itr - m_LoadedByClient[]
 }
 
@@ -411,7 +412,7 @@ void cChunk::WriteBlockArea(cBlockArea & a_Area, int a_MinBlockX, int a_MinBlock
 	int OffZ = BlockStartZ - m_PosZ * cChunkDef::Width;
 	int BaseX = BlockStartX - a_MinBlockX;
 	int BaseZ = BlockStartZ - a_MinBlockZ;
-	int SizeY = a_Area.GetSizeY();
+	int SizeY = std::min(a_Area.GetSizeY(), cChunkDef::Height - a_MinBlockY);
 
 	// TODO: Improve this by not calling FastSetBlock() and doing the processing here
 	// so that the heightmap is touched only once for each column.
@@ -442,7 +443,6 @@ void cChunk::WriteBlockArea(cBlockArea & a_Area, int a_MinBlockX, int a_MinBlock
 
 
 
-/// Returns true if there is a block entity at the coords specified
 bool cChunk::HasBlockEntityAt(int a_BlockX, int a_BlockY, int a_BlockZ)
 {
 	for (cBlockEntityList::iterator itr = m_BlockEntities.begin(); itr != m_BlockEntities.end(); ++itr)
@@ -475,25 +475,25 @@ void cChunk::Stay(bool a_Stay)
 void cChunk::CollectMobCensus(cMobCensus & toFill)
 {
 	toFill.CollectSpawnableChunk(*this);
-	std::list<const Vector3d *> playerPositions;
-	cPlayer * currentPlayer;
-	for (auto itr = m_LoadedByClient.begin(), end = m_LoadedByClient.end(); itr != end; ++itr)
+	std::vector<Vector3d> PlayerPositions;
+	PlayerPositions.reserve(m_LoadedByClient.size());
+	for (auto ClientHandle : m_LoadedByClient)
 	{
-		currentPlayer = (*itr)->GetPlayer();
-		playerPositions.push_back(&(currentPlayer->GetPosition()));
+		const cPlayer * currentPlayer = ClientHandle->GetPlayer();
+		PlayerPositions.push_back(currentPlayer->GetPosition());
 	}
 
 	Vector3d currentPosition;
-	for (auto itr = m_Entities.begin(); itr != m_Entities.end(); ++itr)
+	for (auto entity : m_Entities)
 	{
 		// LOGD("Counting entity #%i (%s)", (*itr)->GetUniqueID(), (*itr)->GetClass());
-		if ((*itr)->IsMob())
+		if (entity->IsMob())
 		{
-			auto & Monster = reinterpret_cast<cMonster &>(**itr);
+			auto & Monster = reinterpret_cast<cMonster &>(*entity);
 			currentPosition = Monster.GetPosition();
-			for (auto itr2 = playerPositions.cbegin(); itr2 != playerPositions.cend(); ++itr2)
+			for (const auto & PlayerPos : PlayerPositions)
 			{
-				toFill.CollectMob(Monster, *this, (currentPosition - **itr2).SqrLength());
+				toFill.CollectMob(Monster, *this, (currentPosition - PlayerPos).SqrLength());
 			}
 		}
 	}  // for itr - m_Entitites[]
@@ -640,6 +640,7 @@ void cChunk::Tick(std::chrono::milliseconds a_Dt)
 		else if ((*itr)->IsWorldTravellingFrom(m_World))
 		{
 			// Remove all entities that are travelling to another world
+			LOGD("Removing entity from [%d, %d] that's travelling between worlds.", m_PosX, m_PosZ);
 			MarkDirty();
 			(*itr)->SetWorldTravellingFrom(nullptr);
 			itr = m_Entities.erase(itr);
@@ -695,7 +696,6 @@ void cChunk::MoveEntityToNewChunk(cEntity * a_Entity)
 	}
 
 	ASSERT(Neighbor != this);  // Moving into the same chunk? wtf?
-	
 	Neighbor->AddEntity(a_Entity);
 
 	class cMover :
@@ -780,17 +780,17 @@ void cChunk::BroadcastPendingBlockChanges(void)
 	if (m_PendingSendBlocks.size() >= 10240)
 	{
 		// Resend the full chunk
-		for (cClientHandleList::iterator itr = m_LoadedByClient.begin(), end = m_LoadedByClient.end(); itr != end; ++itr)
+		for (auto ClientHandle : m_LoadedByClient)
 		{
-			m_World->ForceSendChunkTo(m_PosX, m_PosZ, cChunkSender::E_CHUNK_PRIORITY_MEDIUM, (*itr));
+			m_World->ForceSendChunkTo(m_PosX, m_PosZ, cChunkSender::E_CHUNK_PRIORITY_MEDIUM, ClientHandle);
 		}
 	}
 	else
 	{
 		// Only send block changes
-		for (cClientHandleList::iterator itr = m_LoadedByClient.begin(), end = m_LoadedByClient.end(); itr != end; ++itr)
+		for (auto ClientHandle : m_LoadedByClient)
 		{
-			(*itr)->SendBlockChanges(m_PosX, m_PosZ, m_PendingSendBlocks);
+			ClientHandle->SendBlockChanges(m_PosX, m_PosZ, m_PendingSendBlocks);
 		}
 	}
 	m_PendingSendBlocks.clear();
@@ -1018,20 +1018,26 @@ void cChunk::GrowMelonPumpkin(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE a_Bl
 	
 	// Check if there's soil under the neighbor. We already know the neighbors are valid. Place produce if ok
 	BLOCKTYPE Soil;
-	UnboundedRelGetBlock(a_RelX + x, a_RelY - 1, a_RelZ + z, Soil, BlockMeta);
+	VERIFY(UnboundedRelGetBlock(a_RelX + x, a_RelY - 1, a_RelZ + z, Soil, BlockMeta));
 	switch (Soil)
 	{
 		case E_BLOCK_DIRT:
 		case E_BLOCK_GRASS:
 		case E_BLOCK_FARMLAND:
 		{
-			// DEBUG: This is here to catch FS #349 - melons growing over other crops.
-			LOG("Growing melon / pumpkin overwriting %s, growing on %s",
-				ItemTypeToString(BlockType[CheckType]).c_str(),
-				ItemTypeToString(Soil).c_str()
-			);
 			// Place a randomly-facing produce:
-			UnboundedRelFastSetBlock(a_RelX + x, a_RelY, a_RelZ + z, ProduceType, (NIBBLETYPE)(a_TickRandom.randInt(4) % 4));
+			NIBBLETYPE Meta = (ProduceType == E_BLOCK_MELON) ? 0 : static_cast<NIBBLETYPE>(a_TickRandom.randInt(4) % 4);
+			LOGD("Growing melon / pumpkin at {%d, %d, %d} (<%d, %d> from stem), overwriting %s, growing on top of %s, meta %d",
+				a_RelX + x + m_PosX * cChunkDef::Width, a_RelY, a_RelZ + z + m_PosZ * cChunkDef::Width,
+				x, z,
+				ItemTypeToString(BlockType[CheckType]).c_str(),
+				ItemTypeToString(Soil).c_str(),
+				Meta
+			);
+			VERIFY(UnboundedRelFastSetBlock(a_RelX + x, a_RelY, a_RelZ + z, ProduceType, Meta));
+			auto Absolute = RelativeToAbsolute(Vector3i{a_RelX + x, a_RelY, a_RelZ + z}, m_PosX, m_PosZ);
+			cChunkInterface ChunkInterface(this->GetWorld()->GetChunkMap());
+			cBlockHandler::NeighborChanged(ChunkInterface, Absolute.x, Absolute.y - 1, Absolute.z, BLOCK_FACE_YP);
 			break;
 		}
 	}
@@ -1126,7 +1132,7 @@ void cChunk::GrowCactus(int a_RelX, int a_RelY, int a_RelZ, int a_NumBlocks)
 
 bool cChunk::UnboundedRelGetBlock(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE & a_BlockType, NIBBLETYPE & a_BlockMeta) const
 {
-	if ((a_RelY < 0) || (a_RelY >= cChunkDef::Height))
+	if (!cChunkDef::IsValidHeight(a_RelY))
 	{
 		LOGWARNING("%s: requesting a block with a_RelY out of range: %d", __FUNCTION__, a_RelY);
 		return false;
@@ -1147,7 +1153,7 @@ bool cChunk::UnboundedRelGetBlock(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE 
 
 bool cChunk::UnboundedRelGetBlockType(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE & a_BlockType) const
 {
-	if ((a_RelY < 0) || (a_RelY >= cChunkDef::Height))
+	if (!cChunkDef::IsValidHeight(a_RelY))
 	{
 		LOGWARNING("%s: requesting a block with a_RelY out of range: %d", __FUNCTION__, a_RelY);
 		return false;
@@ -1168,7 +1174,7 @@ bool cChunk::UnboundedRelGetBlockType(int a_RelX, int a_RelY, int a_RelZ, BLOCKT
 
 bool cChunk::UnboundedRelGetBlockMeta(int a_RelX, int a_RelY, int a_RelZ, NIBBLETYPE & a_BlockMeta) const
 {
-	if ((a_RelY < 0) || (a_RelY >= cChunkDef::Height))
+	if (!cChunkDef::IsValidHeight(a_RelY))
 	{
 		LOGWARNING("%s: requesting a block with a_RelY out of range: %d", __FUNCTION__, a_RelY);
 		return false;
@@ -1189,7 +1195,7 @@ bool cChunk::UnboundedRelGetBlockMeta(int a_RelX, int a_RelY, int a_RelZ, NIBBLE
 
 bool cChunk::UnboundedRelGetBlockBlockLight(int a_RelX, int a_RelY, int a_RelZ, NIBBLETYPE & a_BlockBlockLight) const
 {
-	if ((a_RelY < 0) || (a_RelY >= cChunkDef::Height))
+	if (!cChunkDef::IsValidHeight(a_RelY))
 	{
 		LOGWARNING("%s: requesting a block with a_RelY out of range: %d", __FUNCTION__, a_RelY);
 		return false;
@@ -1210,7 +1216,7 @@ bool cChunk::UnboundedRelGetBlockBlockLight(int a_RelX, int a_RelY, int a_RelZ, 
 
 bool cChunk::UnboundedRelGetBlockSkyLight(int a_RelX, int a_RelY, int a_RelZ, NIBBLETYPE & a_BlockSkyLight) const
 {
-	if ((a_RelY < 0) || (a_RelY >= cChunkDef::Height))
+	if (!cChunkDef::IsValidHeight(a_RelY))
 	{
 		LOGWARNING("%s: requesting a block with a_RelY out of range: %d", __FUNCTION__, a_RelY);
 		return false;
@@ -1231,7 +1237,7 @@ bool cChunk::UnboundedRelGetBlockSkyLight(int a_RelX, int a_RelY, int a_RelZ, NI
 
 bool cChunk::UnboundedRelGetBlockLights(int a_RelX, int a_RelY, int a_RelZ, NIBBLETYPE & a_BlockLight, NIBBLETYPE & a_SkyLight) const
 {
-	if ((a_RelY < 0) || (a_RelY >= cChunkDef::Height))
+	if (!cChunkDef::IsValidHeight(a_RelY))
 	{
 		LOGWARNING("%s: requesting a block with a_RelY out of range: %d", __FUNCTION__, a_RelY);
 		return false;
@@ -1253,7 +1259,7 @@ bool cChunk::UnboundedRelGetBlockLights(int a_RelX, int a_RelY, int a_RelZ, NIBB
 
 bool cChunk::UnboundedRelSetBlock(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta)
 {
-	if ((a_RelY < 0) || (a_RelY >= cChunkDef::Height))
+	if (!cChunkDef::IsValidHeight(a_RelY))
 	{
 		LOGWARNING("UnboundedRelSetBlock(): requesting a block with a_RelY out of range: %d", a_RelY);
 		return false;
@@ -1274,7 +1280,7 @@ bool cChunk::UnboundedRelSetBlock(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE 
 
 bool cChunk::UnboundedRelFastSetBlock(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta)
 {
-	if ((a_RelY < 0) || (a_RelY >= cChunkDef::Height))
+	if (!cChunkDef::IsValidHeight(a_RelY))
 	{
 		LOGWARNING("UnboundedRelFastSetBlock(): requesting a block with a_RelY out of range: %d", a_RelY);
 		return false;
@@ -1295,7 +1301,7 @@ bool cChunk::UnboundedRelFastSetBlock(int a_RelX, int a_RelY, int a_RelZ, BLOCKT
 
 void cChunk::UnboundedQueueTickBlock(int a_RelX, int a_RelY, int a_RelZ)
 {
-	if ((a_RelY < 0) || (a_RelY >= cChunkDef::Height))
+	if (!cChunkDef::IsValidHeight(a_RelY))
 	{
 		// Outside of chunkmap
 		return;
@@ -1354,6 +1360,7 @@ void cChunk::CreateBlockEntities(void)
 					case E_BLOCK_JUKEBOX:
 					case E_BLOCK_FLOWER_POT:
 					case E_BLOCK_MOB_SPAWNER:
+					case E_BLOCK_BREWING_STAND:
 					{
 						if (!HasBlockEntityAt(x + m_PosX * Width, y, z + m_PosZ * Width))
 						{
@@ -1435,7 +1442,7 @@ void cChunk::CalculateHeightmap(const BLOCKTYPE * a_BlockTypes)
 				int index = MakeIndex( x, y, z);
 				if (a_BlockTypes[index] != E_BLOCK_AIR)
 				{
-					m_HeightMap[x + z * Width] = (HEIGHTTYPE)y;
+					m_HeightMap[x + z * Width] = static_cast<HEIGHTTYPE>(y);
 					break;
 				}
 			}  // for y
@@ -1486,6 +1493,7 @@ void cChunk::SetBlock(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE a_BlockType,
 		case E_BLOCK_JUKEBOX:
 		case E_BLOCK_FLOWER_POT:
 		case E_BLOCK_MOB_SPAWNER:
+		case E_BLOCK_BREWING_STAND:
 		{
 			AddBlockEntity(cBlockEntity::CreateByBlockType(a_BlockType, a_BlockMeta, WorldPos.x, WorldPos.y, WorldPos.z, m_World));
 			break;
@@ -1609,7 +1617,7 @@ void cChunk::FastSetBlock(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE a_BlockT
 	{
 		if (a_BlockType != E_BLOCK_AIR)
 		{
-			m_HeightMap[a_RelX + a_RelZ * Width] = (HEIGHTTYPE)a_RelY;
+			m_HeightMap[a_RelX + a_RelZ * Width] = static_cast<HEIGHTTYPE>(a_RelY);
 		}
 		else
 		{
@@ -1617,7 +1625,7 @@ void cChunk::FastSetBlock(int a_RelX, int a_RelY, int a_RelZ, BLOCKTYPE a_BlockT
 			{
 				if (GetBlock(a_RelX, y, a_RelZ) != E_BLOCK_AIR)
 				{
-					m_HeightMap[a_RelX + a_RelZ * Width] = (HEIGHTTYPE)y;
+					m_HeightMap[a_RelX + a_RelZ * Width] = static_cast<HEIGHTTYPE>(y);
 					break;
 				}
 			}  // for y - column in m_BlockData
@@ -1718,13 +1726,14 @@ void cChunk::SetAlwaysTicked(bool a_AlwaysTicked)
 
 
 
-void cChunk::UseBlockEntity(cPlayer * a_Player, int a_X, int a_Y, int a_Z)
+bool cChunk::UseBlockEntity(cPlayer * a_Player, int a_X, int a_Y, int a_Z)
 {
 	cBlockEntity * be = GetBlockEntity(a_X, a_Y, a_Z);
 	if (be != nullptr)
 	{
-		be->UsedBy(a_Player);
+		return be->UsedBy(a_Player);
 	}
+	return false;
 }
 
 
@@ -1753,9 +1762,9 @@ void cChunk::SetAreaBiome(int a_MinRelX, int a_MaxRelX, int a_MinRelZ, int a_Max
 	MarkDirty();
 	
 	// Re-send the chunk to all clients:
-	for (cClientHandleList::iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto ClientHandle : m_LoadedByClient)
 	{
-		m_World->ForceSendChunkTo(m_PosX, m_PosZ, cChunkSender::E_CHUNK_PRIORITY_MEDIUM, (*itr));
+		m_World->ForceSendChunkTo(m_PosX, m_PosZ, cChunkSender::E_CHUNK_PRIORITY_MEDIUM, ClientHandle);
 	}  // for itr - m_LoadedByClient[]
 }
 
@@ -1775,9 +1784,9 @@ void cChunk::CollectPickupsByPlayer(cPlayer & a_Player)
 		{
 			continue;  // Only pickups and projectiles can be picked up
 		}
-		float DiffX = (float)((*itr)->GetPosX() - PosX);
-		float DiffY = (float)((*itr)->GetPosY() - PosY);
-		float DiffZ = (float)((*itr)->GetPosZ() - PosZ);
+		float DiffX = static_cast<float>((*itr)->GetPosX() - PosX);
+		float DiffY = static_cast<float>((*itr)->GetPosY() - PosY);
+		float DiffZ = static_cast<float>((*itr)->GetPosZ() - PosZ);
 		float SqrDist = DiffX * DiffX + DiffY * DiffY + DiffZ * DiffZ;
 		if (SqrDist < 1.5f * 1.5f)  // 1.5 block
 		{
@@ -1851,15 +1860,13 @@ void cChunk::RemoveBlockEntity(cBlockEntity * a_BlockEntity)
 
 bool cChunk::AddClient(cClientHandle * a_Client)
 {
-	for (cClientHandleList::iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	if (std::find(m_LoadedByClient.begin(), m_LoadedByClient.end(), a_Client) != m_LoadedByClient.end())
 	{
-		if (a_Client == *itr)
-		{
-			// Already there, nothing needed
-			return false;
-		}
+		// Already there, nothing needed
+		return false;
 	}
-	m_LoadedByClient.push_back( a_Client);
+
+	m_LoadedByClient.push_back(a_Client);
 
 	for (cEntityList::iterator itr = m_Entities.begin(); itr != m_Entities.end(); ++itr)
 	{
@@ -1882,31 +1889,28 @@ bool cChunk::AddClient(cClientHandle * a_Client)
 
 void cChunk::RemoveClient(cClientHandle * a_Client)
 {
-	for (cClientHandleList::iterator itrC = m_LoadedByClient.begin(); itrC != m_LoadedByClient.end(); ++itrC)
+	auto itr = std::remove(m_LoadedByClient.begin(), m_LoadedByClient.end(), a_Client);
+	// We should always remove at most one client.
+	ASSERT(std::distance(itr, m_LoadedByClient.end()) <= 1);
+	// Note: itr can equal m_LoadedByClient.end()
+	m_LoadedByClient.erase(itr, m_LoadedByClient.end());
+
+	if (!a_Client->IsDestroyed())
 	{
-		if (*itrC != a_Client)
+		for (auto Entity : m_Entities)
 		{
-			continue;
+			/*
+			// DEBUG:
+			LOGD("chunk [%i, %i] destroying entity #%i for player \"%s\"",
+				m_PosX, m_PosZ,
+				(*itr)->GetUniqueID(), a_Client->GetUsername().c_str()
+			);
+			*/
+			a_Client->SendDestroyEntity(*Entity);
 		}
+	}
 
-		m_LoadedByClient.erase(itrC);
-
-		if (!a_Client->IsDestroyed())
-		{
-			for (cEntityList::iterator itrE = m_Entities.begin(); itrE != m_Entities.end(); ++itrE)
-			{
-				/*
-				// DEBUG:
-				LOGD("chunk [%i, %i] destroying entity #%i for player \"%s\"",
-					m_PosX, m_PosZ,
-					(*itr)->GetUniqueID(), a_Client->GetUsername().c_str()
-				);
-				*/
-				a_Client->SendDestroyEntity(*(*itrE));
-			}
-		}
-		return;
-	}  // for itr - m_LoadedByClient[]
+	return;
 }
 
 
@@ -1915,14 +1919,7 @@ void cChunk::RemoveClient(cClientHandle * a_Client)
 
 bool cChunk::HasClient(cClientHandle * a_Client)
 {
-	for (cClientHandleList::const_iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
-	{
-		if ((*itr) == a_Client)
-		{
-			return true;
-		}
-	}
-	return false;
+	return std::find(m_LoadedByClient.begin(), m_LoadedByClient.end(), a_Client) != m_LoadedByClient.end();
 }
 
 
@@ -2063,6 +2060,24 @@ bool cChunk::ForEachBlockEntity(cBlockEntityCallback & a_Callback)
 
 
 
+bool cChunk::ForEachBrewingstand(cBrewingstandCallback & a_Callback)
+{
+	// The blockentity list is locked by the parent chunkmap's CS
+	for (cBlockEntityList::iterator itr = m_BlockEntities.begin(), itr2 = itr; itr != m_BlockEntities.end(); itr = itr2)
+	{
+		++itr2;
+		if (a_Callback.Item(reinterpret_cast<cBrewingstandEntity *>(*itr)))
+		{
+			return false;
+		}
+	}  // for itr - m_BlockEntitites[]
+	return true;
+}
+
+
+
+
+
 bool cChunk::ForEachChest(cChestCallback & a_Callback)
 {
 	// The blockentity list is locked by the parent chunkmap's CS
@@ -2073,7 +2088,7 @@ bool cChunk::ForEachChest(cChestCallback & a_Callback)
 		{
 			continue;
 		}
-		if (a_Callback.Item((cChestEntity *)*itr))
+		if (a_Callback.Item(reinterpret_cast<cChestEntity *>(*itr)))
 		{
 			return false;
 		}
@@ -2095,7 +2110,7 @@ bool cChunk::ForEachDispenser(cDispenserCallback & a_Callback)
 		{
 			continue;
 		}
-		if (a_Callback.Item((cDispenserEntity *)*itr))
+		if (a_Callback.Item(reinterpret_cast<cDispenserEntity *>(*itr)))
 		{
 			return false;
 		}
@@ -2117,7 +2132,7 @@ bool cChunk::ForEachDropper(cDropperCallback & a_Callback)
 		{
 			continue;
 		}
-		if (a_Callback.Item((cDropperEntity *)*itr))
+		if (a_Callback.Item(reinterpret_cast<cDropperEntity *>(*itr)))
 		{
 			return false;
 		}
@@ -2139,7 +2154,7 @@ bool cChunk::ForEachDropSpenser(cDropSpenserCallback & a_Callback)
 		{
 			continue;
 		}
-		if (a_Callback.Item((cDropSpenserEntity *)*itr))
+		if (a_Callback.Item(reinterpret_cast<cDropSpenserEntity *>(*itr)))
 		{
 			return false;
 		}
@@ -2169,7 +2184,7 @@ bool cChunk::ForEachFurnace(cFurnaceCallback & a_Callback)
 				continue;
 			}
 		}
-		if (a_Callback.Item((cFurnaceEntity *)*itr))
+		if (a_Callback.Item(reinterpret_cast<cFurnaceEntity *>(*itr)))
 		{
 			return false;
 		}
@@ -2263,13 +2278,45 @@ bool cChunk::DoWithBeaconAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBeaconCal
 		}
 		
 		// The correct block entity is here
-		if (a_Callback.Item((cBeaconEntity *)*itr))
+		if (a_Callback.Item(reinterpret_cast<cBeaconEntity *>(*itr)))
 		{
 			return false;
 		}
 		return true;
 	}  // for itr - m_BlockEntitites[]
 	
+	// Not found:
+	return false;
+}
+
+
+
+
+
+bool cChunk::DoWithBrewingstandAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBrewingstandCallback & a_Callback)
+{
+	// The blockentity list is locked by the parent chunkmap's CS
+	for (cBlockEntityList::iterator itr = m_BlockEntities.begin(), itr2 = itr; itr != m_BlockEntities.end(); itr = itr2)
+	{
+		++itr2;
+		if (((*itr)->GetPosX() != a_BlockX) || ((*itr)->GetPosY() != a_BlockY) || ((*itr)->GetPosZ() != a_BlockZ))
+		{
+			continue;
+		}
+		if ((*itr)->GetBlockType() != E_BLOCK_BREWING_STAND)
+		{
+			// There is a block entity here, but of different type. No other block entity can be here, so we can safely bail out
+			return false;
+		}
+
+		// The correct block entity is here
+		if (a_Callback.Item(reinterpret_cast<cBrewingstandEntity *>(*itr)))
+		{
+			return false;
+		}
+		return true;
+	}  // for itr - m_BlockEntitites[]
+
 	// Not found:
 	return false;
 }
@@ -2295,7 +2342,7 @@ bool cChunk::DoWithChestAt(int a_BlockX, int a_BlockY, int a_BlockZ, cChestCallb
 		}
 		
 		// The correct block entity is here
-		if (a_Callback.Item((cChestEntity *)*itr))
+		if (a_Callback.Item(reinterpret_cast<cChestEntity *>(*itr)))
 		{
 			return false;
 		}
@@ -2327,7 +2374,7 @@ bool cChunk::DoWithDispenserAt(int a_BlockX, int a_BlockY, int a_BlockZ, cDispen
 		}
 		
 		// The correct block entity is here
-		if (a_Callback.Item((cDispenserEntity *)*itr))
+		if (a_Callback.Item(reinterpret_cast<cDispenserEntity *>(*itr)))
 		{
 			return false;
 		}
@@ -2359,7 +2406,7 @@ bool cChunk::DoWithDropperAt(int a_BlockX, int a_BlockY, int a_BlockZ, cDropperC
 		}
 		
 		// The correct block entity is here
-		if (a_Callback.Item((cDropperEntity *)*itr))
+		if (a_Callback.Item(reinterpret_cast<cDropperEntity *>(*itr)))
 		{
 			return false;
 		}
@@ -2391,7 +2438,7 @@ bool cChunk::DoWithDropSpenserAt(int a_BlockX, int a_BlockY, int a_BlockZ, cDrop
 		}
 		
 		// The correct block entity is here
-		if (a_Callback.Item((cDropSpenserEntity *)*itr))
+		if (a_Callback.Item(reinterpret_cast<cDropSpenserEntity *>(*itr)))
 		{
 			return false;
 		}
@@ -2431,7 +2478,7 @@ bool cChunk::DoWithFurnaceAt(int a_BlockX, int a_BlockY, int a_BlockZ, cFurnaceC
 		}  // switch (BlockType)
 		
 		// The correct block entity is here,
-		if (a_Callback.Item((cFurnaceEntity *)*itr))
+		if (a_Callback.Item(reinterpret_cast<cFurnaceEntity *>(*itr)))
 		{
 			return false;
 		}
@@ -2463,7 +2510,7 @@ bool cChunk::DoWithNoteBlockAt(int a_BlockX, int a_BlockY, int a_BlockZ, cNoteBl
 		}
 		
 		// The correct block entity is here
-		if (a_Callback.Item((cNoteEntity *)*itr))
+		if (a_Callback.Item(reinterpret_cast<cNoteEntity *>(*itr)))
 		{
 			return false;
 		}
@@ -2495,7 +2542,7 @@ bool cChunk::DoWithCommandBlockAt(int a_BlockX, int a_BlockY, int a_BlockZ, cCom
 		}
 		
 		// The correct block entity is here,
-		if (a_Callback.Item((cCommandBlockEntity *)*itr))
+		if (a_Callback.Item(reinterpret_cast<cCommandBlockEntity *>(*itr)))
 		{
 			return false;
 		}
@@ -2527,7 +2574,7 @@ bool cChunk::DoWithMobHeadAt(int a_BlockX, int a_BlockY, int a_BlockZ, cMobHeadC
 		}
 		
 		// The correct block entity is here,
-		if (a_Callback.Item((cMobHeadEntity *)*itr))
+		if (a_Callback.Item(reinterpret_cast<cMobHeadEntity *>(*itr)))
 		{
 			return false;
 		}
@@ -2559,7 +2606,7 @@ bool cChunk::DoWithFlowerPotAt(int a_BlockX, int a_BlockY, int a_BlockZ, cFlower
 		}
 		
 		// The correct block entity is here
-		if (a_Callback.Item((cFlowerPotEntity *)*itr))
+		if (a_Callback.Item(reinterpret_cast<cFlowerPotEntity *>(*itr)))
 		{
 			return false;
 		}
@@ -2588,10 +2635,10 @@ bool cChunk::GetSignLines(int a_BlockX, int a_BlockY, int a_BlockZ, AString & a_
 			case E_BLOCK_WALLSIGN:
 			case E_BLOCK_SIGN_POST:
 			{
-				a_Line1 = ((cSignEntity *)*itr)->GetLine(0);
-				a_Line2 = ((cSignEntity *)*itr)->GetLine(1);
-				a_Line3 = ((cSignEntity *)*itr)->GetLine(2);
-				a_Line4 = ((cSignEntity *)*itr)->GetLine(3);
+				a_Line1 = reinterpret_cast<cSignEntity *>(*itr)->GetLine(0);
+				a_Line2 = reinterpret_cast<cSignEntity *>(*itr)->GetLine(1);
+				a_Line3 = reinterpret_cast<cSignEntity *>(*itr)->GetLine(2);
+				a_Line4 = reinterpret_cast<cSignEntity *>(*itr)->GetLine(3);
 				return true;
 			}
 		}  // switch (BlockType)
@@ -2788,9 +2835,9 @@ cChunk * cChunk::GetRelNeighborChunkAdjustCoords(int & a_RelX, int & a_RelZ) con
 
 void cChunk::BroadcastAttachEntity(const cEntity & a_Entity, const cEntity * a_Vehicle)
 {
-	for (cClientHandleList::const_iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto ClientHandle : m_LoadedByClient)
 	{
-		(*itr)->SendAttachEntity(a_Entity, a_Vehicle);
+		ClientHandle->SendAttachEntity(a_Entity, a_Vehicle);
 	}  // for itr - LoadedByClient[]
 }
 
@@ -2800,7 +2847,7 @@ void cChunk::BroadcastAttachEntity(const cEntity & a_Entity, const cEntity * a_V
 
 void cChunk::BroadcastBlockAction(int a_BlockX, int a_BlockY, int a_BlockZ, char a_Byte1, char a_Byte2, BLOCKTYPE a_BlockType, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::const_iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -2816,7 +2863,7 @@ void cChunk::BroadcastBlockAction(int a_BlockX, int a_BlockY, int a_BlockZ, char
 
 void cChunk::BroadcastBlockBreakAnimation(UInt32 a_EntityID, int a_BlockX, int a_BlockY, int a_BlockZ, char a_Stage, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -2838,7 +2885,7 @@ void cChunk::BroadcastBlockEntity(int a_BlockX, int a_BlockY, int a_BlockZ, cons
 	{
 		return;
 	}
-	for (cClientHandleList::iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -2852,25 +2899,9 @@ void cChunk::BroadcastBlockEntity(int a_BlockX, int a_BlockY, int a_BlockZ, cons
 
 
 
-void cChunk::BroadcastChunkData(cChunkDataSerializer & a_Serializer, const cClientHandle * a_Exclude)
-{
-	for (cClientHandleList::iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
-	{
-		if (*itr == a_Exclude)
-		{
-			continue;
-		}
-		(*itr)->SendChunkData(m_PosX, m_PosZ, a_Serializer);
-	}  // for itr - LoadedByClient[]
-}
-
-
-
-
-
 void cChunk::BroadcastCollectEntity(const cEntity & a_Entity, const cPlayer & a_Player, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -2886,7 +2917,7 @@ void cChunk::BroadcastCollectEntity(const cEntity & a_Entity, const cPlayer & a_
 
 void cChunk::BroadcastDestroyEntity(const cEntity & a_Entity, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::const_iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -2902,7 +2933,7 @@ void cChunk::BroadcastDestroyEntity(const cEntity & a_Entity, const cClientHandl
 
 void cChunk::BroadcastEntityEffect(const cEntity & a_Entity, int a_EffectID, int a_Amplifier, short a_Duration, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::const_iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -2918,7 +2949,7 @@ void cChunk::BroadcastEntityEffect(const cEntity & a_Entity, int a_EffectID, int
 
 void cChunk::BroadcastEntityEquipment(const cEntity & a_Entity, short a_SlotNum, const cItem & a_Item, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::const_iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -2934,7 +2965,7 @@ void cChunk::BroadcastEntityEquipment(const cEntity & a_Entity, short a_SlotNum,
 
 void cChunk::BroadcastEntityHeadLook(const cEntity & a_Entity, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::const_iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -2950,7 +2981,7 @@ void cChunk::BroadcastEntityHeadLook(const cEntity & a_Entity, const cClientHand
 
 void cChunk::BroadcastEntityLook(const cEntity & a_Entity, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::const_iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -2966,7 +2997,7 @@ void cChunk::BroadcastEntityLook(const cEntity & a_Entity, const cClientHandle *
 
 void cChunk::BroadcastEntityMetadata(const cEntity & a_Entity, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::const_iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -2982,7 +3013,7 @@ void cChunk::BroadcastEntityMetadata(const cEntity & a_Entity, const cClientHand
 
 void cChunk::BroadcastEntityRelMove(const cEntity & a_Entity, char a_RelX, char a_RelY, char a_RelZ, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::const_iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -2998,7 +3029,7 @@ void cChunk::BroadcastEntityRelMove(const cEntity & a_Entity, char a_RelX, char 
 
 void cChunk::BroadcastEntityRelMoveLook(const cEntity & a_Entity, char a_RelX, char a_RelY, char a_RelZ, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::const_iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -3014,7 +3045,7 @@ void cChunk::BroadcastEntityRelMoveLook(const cEntity & a_Entity, char a_RelX, c
 
 void cChunk::BroadcastEntityStatus(const cEntity & a_Entity, char a_Status, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::const_iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -3030,7 +3061,7 @@ void cChunk::BroadcastEntityStatus(const cEntity & a_Entity, char a_Status, cons
 
 void cChunk::BroadcastEntityVelocity(const cEntity & a_Entity, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::const_iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -3046,7 +3077,7 @@ void cChunk::BroadcastEntityVelocity(const cEntity & a_Entity, const cClientHand
 
 void cChunk::BroadcastEntityAnimation(const cEntity & a_Entity, char a_Animation, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::const_iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -3062,7 +3093,7 @@ void cChunk::BroadcastEntityAnimation(const cEntity & a_Entity, char a_Animation
 
 void cChunk::BroadcastParticleEffect(const AString & a_ParticleName, float a_SrcX, float a_SrcY, float a_SrcZ, float a_OffsetX, float a_OffsetY, float a_OffsetZ, float a_ParticleData, int a_ParticleAmount, cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -3078,7 +3109,7 @@ void cChunk::BroadcastParticleEffect(const AString & a_ParticleName, float a_Src
 
 void cChunk::BroadcastRemoveEntityEffect(const cEntity & a_Entity, int a_EffectID, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -3094,7 +3125,7 @@ void cChunk::BroadcastRemoveEntityEffect(const cEntity & a_Entity, int a_EffectI
 
 void cChunk::BroadcastSoundEffect(const AString & a_SoundName, double a_X, double a_Y, double a_Z, float a_Volume, float a_Pitch, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -3108,9 +3139,9 @@ void cChunk::BroadcastSoundEffect(const AString & a_SoundName, double a_X, doubl
 
 
 
-void cChunk::BroadcastSoundParticleEffect(int a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data, const cClientHandle * a_Exclude)
+void cChunk::BroadcastSoundParticleEffect(const EffectID a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -3126,7 +3157,7 @@ void cChunk::BroadcastSoundParticleEffect(int a_EffectID, int a_SrcX, int a_SrcY
 
 void cChunk::BroadcastSpawnEntity(cEntity & a_Entity, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -3142,7 +3173,7 @@ void cChunk::BroadcastSpawnEntity(cEntity & a_Entity, const cClientHandle * a_Ex
 
 void cChunk::BroadcastThunderbolt(int a_BlockX, int a_BlockY, int a_BlockZ, const cClientHandle * a_Exclude)
 {
-	for (cClientHandleList::iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		if (*itr == a_Exclude)
 		{
@@ -3158,7 +3189,7 @@ void cChunk::BroadcastThunderbolt(int a_BlockX, int a_BlockY, int a_BlockZ, cons
 
 void cChunk::BroadcastUseBed(const cEntity & a_Entity, int a_BlockX, int a_BlockY, int a_BlockZ)
 {
-	for (cClientHandleList::iterator itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
+	for (auto itr = m_LoadedByClient.begin(); itr != m_LoadedByClient.end(); ++itr)
 	{
 		(*itr)->SendUseBed(a_Entity, a_BlockX, a_BlockY, a_BlockZ);
 	}  // for itr - LoadedByClient[]

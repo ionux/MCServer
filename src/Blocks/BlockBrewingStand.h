@@ -1,18 +1,18 @@
 
 #pragma once
 
+#include "BlockEntity.h"
 #include "BlockHandler.h"
-
-
+#include "MetaRotator.h"
 
 
 
 class cBlockBrewingStandHandler :
-	public cBlockHandler
+	public cMetaRotator<cBlockEntityHandler, 0x07, 0x02, 0x05, 0x03, 0x04>
 {
 public:
 	cBlockBrewingStandHandler(BLOCKTYPE a_BlockType)
-		: cBlockHandler(a_BlockType)
+		: cMetaRotator<cBlockEntityHandler, 0x07, 0x02, 0x05, 0x03, 0x04>(a_BlockType)
 	{
 	}
 
@@ -24,6 +24,12 @@ public:
 	virtual bool IsUseable() override
 	{
 		return true;
+	}
+
+	virtual ColourID GetMapBaseColourID(NIBBLETYPE a_Meta) override
+	{
+		UNUSED(a_Meta);
+		return 6;
 	}
 } ;
 

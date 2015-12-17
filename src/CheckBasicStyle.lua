@@ -127,6 +127,18 @@ local g_ViolationPatterns =
 	-- Check that all "//"-style comments have at least one spaces after:
 	{"%s//[^%s/*<]", "Needs a space after a \"//\"-style comment"},
 	
+	-- Check that doxy-comments are used only in the double-asterisk form:
+	{"/// ", "Use doxycomments in the form /** Comment */"},
+	
+	-- Check that /* */ comments have whitespace around the insides:
+	{"%*%*/",        "Wrong comment termination, use */"},
+	{"/%*[^%s*/\"]", "Needs a space after /*"},  -- Need to take care of the special "//*/" comment ends
+	{"/%*%*[^%s*<]", "Needs a space after /**"},
+	{"[^%s/*]%*/",   "Needs a space before */"},
+	
+	-- Check against MS XML doxycomments:
+	{"/%*%* <", "Remove the MS XML markers from comment"},
+
 	-- Check that all commas have spaces after them and not in front of them:
 	{" ,", "Extra space before a \",\""},
 	{",[^%s\"%%\']", "Needs a space after a \",\""},  -- Report all except >> "," << needed for splitting and >>,%s<< needed for formatting
@@ -175,11 +187,19 @@ local g_ViolationPatterns =
 	{"^[^\"]*[!@#$%%%^&*() %[%]\t][a-zA-Z0-9]+%/[a-zA-Z0-9]+", "Add space around /"},
 
 	-- Check spaces around "&":
-	{"^[a-zA-Z0-9]+%&[a-zA-Z0-9]+",                             "Add space around /"},
-	{"^[^\"]*[!@#$%%%^&*() %[%]\t][a-zA-Z0-9]+%&[a-zA-Z0-9]+",  "Add space around /"},
+	{"^[a-zA-Z0-9]+%&[a-zA-Z0-9]+",                             "Add space around &"},
+	{"^[^\"]*[!@#$%%%^&*() %[%]\t][a-zA-Z0-9]+%&[a-zA-Z0-9]+",  "Add space around &"},
 	{"^[a-zA-Z0-9]+%& [a-zA-Z0-9]+",                            "Add space before &"},
 	{"^[^\"]*[!@#$%%%^&*() %[%]\t][a-zA-Z0-9]+%& [a-zA-Z0-9]+", "Add space before &"},
 	
+	-- Check spaces around "==", "<=" and ">=":
+	{"==[a-zA-Z0-9]+",                             "Add space after =="},
+	{"[a-zA-Z0-9]+==",                             "Add space before =="},
+	{"<=[a-zA-Z0-9]+",                             "Add space after <="},
+	{"[a-zA-Z0-9]+<=",                             "Add space before <="},
+	{">=[a-zA-Z0-9]+",                             "Add space after >="},
+	{"[a-zA-Z0-9]+>=",                             "Add space before >="},
+
 	-- We don't like "Type const *" and "Type const &". Use "const Type *" and "const Type &" instead:
 	{"const %&", "Use 'const Type &' instead of 'Type const &'"},
 	{"const %*", "Use 'const Type *' instead of 'Type const *'"},
@@ -400,6 +420,12 @@ end
 
 -- Process the files in the list:
 for _, fnam in ipairs(ToProcess) do
+
+	-- Remove the optional "./" prefix:
+	if (fnam:sub(1, 2) == "./") then
+		fnam = fnam:sub(3)
+	end
+	
 	ProcessItem(fnam)
 end
 

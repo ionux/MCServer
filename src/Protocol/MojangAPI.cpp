@@ -456,7 +456,7 @@ bool cMojangAPI::SecureRequest(const AString & a_ServerName, const AString & a_R
 			break;
 		}
 
-		a_Response.append((const char *)buf, (size_t)ret);
+		a_Response.append(reinterpret_cast<const char *>(buf), static_cast<size_t>(ret));
 	}
 
 	return true;
@@ -688,7 +688,7 @@ void cMojangAPI::QueryNamesToUUIDs(AStringVector & a_NamesToQuery)
 		AString Request;
 		Request += "POST " + m_NameToUUIDAddress + " HTTP/1.0\r\n";  // We need to use HTTP 1.0 because we don't handle Chunked transfer encoding
 		Request += "Host: " + m_NameToUUIDServer + "\r\n";
-		Request += "User-Agent: MCServer\r\n";
+		Request += "User-Agent: Cuberite\r\n";
 		Request += "Connection: close\r\n";
 		Request += "Content-Type: application/json\r\n";
 		Request += Printf("Content-Length: %u\r\n", static_cast<unsigned>(RequestBody.length()));
@@ -802,7 +802,7 @@ void cMojangAPI::QueryUUIDToProfile(const AString & a_UUID)
 	AString Request;
 	Request += "GET " + Address + " HTTP/1.0\r\n";  // We need to use HTTP 1.0 because we don't handle Chunked transfer encoding
 	Request += "Host: " + m_UUIDToProfileServer + "\r\n";
-	Request += "User-Agent: MCServer\r\n";
+	Request += "User-Agent: Cuberite\r\n";
 	Request += "Connection: close\r\n";
 	Request += "Content-Length: 0\r\n";
 	Request += "\r\n";
@@ -919,7 +919,7 @@ void cMojangAPI::Update(void)
 	}
 	if (!PlayerNames.empty())
 	{
-		LOG("cMojangAPI: Updating name-to-uuid cache for %u names", (unsigned)PlayerNames.size());
+		LOG("cMojangAPI: Updating name-to-uuid cache for %u names", static_cast<unsigned>(PlayerNames.size()));
 		QueryNamesToUUIDs(PlayerNames);
 	}
 
@@ -937,7 +937,7 @@ void cMojangAPI::Update(void)
 	}
 	if (!ProfileUUIDs.empty())
 	{
-		LOG("cMojangAPI: Updating uuid-to-profile cache for %u uuids", (unsigned)ProfileUUIDs.size());
+		LOG("cMojangAPI: Updating uuid-to-profile cache for %u uuids", static_cast<unsigned>(ProfileUUIDs.size()));
 		for (AStringVector::const_iterator itr = ProfileUUIDs.begin(), end = ProfileUUIDs.end(); itr != end; ++itr)
 		{
 			QueryUUIDToProfile(*itr);

@@ -86,7 +86,7 @@ static int tolua_cWorld_ChunkStay(lua_State * tolua_S)
 	}
 	
 	// Read the params:
-	cWorld * World = (cWorld *)tolua_tousertype(tolua_S, 1, nullptr);
+	cWorld * World = reinterpret_cast<cWorld *>(tolua_tousertype(tolua_S, 1, nullptr));
 	if (World == nullptr)
 	{
 		LOGWARNING("World:ChunkStay(): invalid world parameter");
@@ -105,6 +105,59 @@ static int tolua_cWorld_ChunkStay(lua_State * tolua_S)
 
 	ChunkStay->Enable(*World->GetChunkMap(), 3, 4);
 	return 0;
+}
+
+
+
+
+static int tolua_cWorld_ForEachLoadedChunk(lua_State * tolua_S)
+{
+	// Exported manually, because tolua doesn't support converting functions to functor types.
+	// Function signature: ForEachLoadedChunk(callback) -> bool
+
+	cLuaState L(tolua_S);
+	if (
+		!L.CheckParamUserType(1, "cWorld") ||
+		!L.CheckParamFunction(2)
+		)
+	{
+		return 0;
+	}
+
+	cPluginLua * Plugin = cManualBindings::GetLuaPlugin(tolua_S);
+	if (Plugin == nullptr)
+	{
+		return 0;
+	}
+
+	// Read the params:
+	cWorld * World = reinterpret_cast<cWorld *>(tolua_tousertype(tolua_S, 1, nullptr));
+	if (World == nullptr)
+	{
+		LOGWARNING("World:ForEachLoadedChunk(): invalid world parameter");
+		L.LogStackTrace();
+		return 0;
+	}
+	cLuaState::cRef FnRef;
+	L.GetStackValues(2, FnRef);
+	if (!FnRef.IsValid())
+	{
+		return cManualBindings::lua_do_error(tolua_S, "Error in function call '#funcname#': Could not get function reference of parameter #2");
+	}
+
+	// Call the enumeration:
+	bool ret = World->ForEachLoadedChunk(
+		[&L, &FnRef](int a_ChunkX, int a_ChunkZ) -> bool
+		{
+			bool res = false;  // By default continue the enumeration
+			L.Call(FnRef, a_ChunkX, a_ChunkZ, cLuaState::Return, res);
+			return res;
+		}
+	);
+
+	// Push the return value:
+	L.Push(ret);
+	return 1;
 }
 
 
@@ -129,7 +182,9 @@ static int tolua_cWorld_GetBlockInfo(lua_State * tolua_S)
 
 	// Get params:
 	cWorld * Self = nullptr;
-	int BlockX, BlockY, BlockZ;
+	int BlockX = 0;
+	int BlockY = 0;
+	int BlockZ = 0;
 	L.GetStackValues(1, Self, BlockX, BlockY, BlockZ);
 	if (Self == nullptr)
 	{
@@ -176,7 +231,9 @@ static int tolua_cWorld_GetBlockTypeMeta(lua_State * tolua_S)
 
 	// Get params:
 	cWorld * Self = nullptr;
-	int BlockX, BlockY, BlockZ;
+	int BlockX = 0;
+	int BlockY = 0;
+	int BlockZ = 0;
 	L.GetStackValues(1, Self, BlockX, BlockY, BlockZ);
 	if (Self == nullptr)
 	{
@@ -220,7 +277,9 @@ static int tolua_cWorld_GetSignLines(lua_State * tolua_S)
 
 	// Get params:
 	cWorld * Self = nullptr;
-	int BlockX, BlockY, BlockZ;
+	int BlockX = 0;
+	int BlockY = 0;
+	int BlockZ = 0;
 	L.GetStackValues(1, Self, BlockX, BlockY, BlockZ);
 	if (Self == nullptr)
 	{
@@ -267,7 +326,8 @@ static int tolua_cWorld_PrepareChunk(lua_State * tolua_S)
 	
 	// Read the params:
 	cWorld * world = nullptr;
-	int chunkX = 0, chunkZ = 0;
+	int chunkX = 0;
+	int chunkZ = 0;
 	L.GetStackValues(1, world, chunkX, chunkZ);
 	if (world == nullptr)
 	{
@@ -288,11 +348,11 @@ static int tolua_cWorld_PrepareChunk(lua_State * tolua_S)
 		}
 
 		// cChunkCoordCallback override:
-		virtual void Call(int a_CBChunkX, int a_CBChunkZ) override
+		virtual void Call(int a_CBChunkX, int a_CBChunkZ, bool a_IsSuccess) override
 		{
 			if (m_Callback.IsValid())
 			{
-				m_LuaState.Call(m_Callback, a_CBChunkX, a_CBChunkZ);
+				m_LuaState.Call(m_Callback, a_CBChunkX, a_CBChunkZ, a_IsSuccess);
 			}
 
 			// This is the last reference of this object, we must delete it so that it doesn't leak:
@@ -314,7 +374,6 @@ static int tolua_cWorld_PrepareChunk(lua_State * tolua_S)
 
 
 class cLuaWorldTask :
-	public cWorld::cTask,
 	public cPluginLua::cResettable
 {
 public:
@@ -324,11 +383,7 @@ public:
 	{
 	}
 
-protected:
-	int m_FnRef;
-	
-	// cWorld::cTask overrides:
-	virtual void Run(cWorld & a_World) override
+	void Run(cWorld & a_World)
 	{
 		cCSLock Lock(m_CSPlugin);
 		if (m_Plugin != nullptr)
@@ -336,7 +391,10 @@ protected:
 			m_Plugin->Call(m_FnRef, &a_World);
 		}
 	}
-} ;
+
+protected:
+	int m_FnRef;
+};
 
 
 
@@ -356,7 +414,7 @@ static int tolua_cWorld_QueueTask(lua_State * tolua_S)
 	}
 
 	// Retrieve the args:
-	cWorld * self = (cWorld *)tolua_tousertype(tolua_S, 1, nullptr);
+	cWorld * self = reinterpret_cast<cWorld *>(tolua_tousertype(tolua_S, 1, nullptr));
 	if (self == nullptr)
 	{
 		return cManualBindings::lua_do_error(tolua_S, "Error in function call '#funcname#': Not called on an object instance");
@@ -373,9 +431,9 @@ static int tolua_cWorld_QueueTask(lua_State * tolua_S)
 		return cManualBindings::lua_do_error(tolua_S, "Error in function call '#funcname#': Could not get function reference of parameter #1");
 	}
 
-	auto task = std::make_shared<cLuaWorldTask>(*Plugin, FnRef);
-	Plugin->AddResettable(task);
-	self->QueueTask(task);
+	auto ResettableTask = std::make_shared<cLuaWorldTask>(*Plugin, FnRef);
+	Plugin->AddResettable(ResettableTask);
+	self->QueueTask(std::bind(&cLuaWorldTask::Run, ResettableTask, std::placeholders::_1));
 	return 0;
 }
 
@@ -401,7 +459,9 @@ static int tolua_cWorld_SetSignLines(lua_State * tolua_S)
 
 	// Get params:
 	cWorld * Self = nullptr;
-	int BlockX, BlockY, BlockZ;
+	int BlockX = 0;
+	int BlockY = 0;
+	int BlockZ = 0;
 	AString Line1, Line2, Line3, Line4;
 	L.GetStackValues(1, Self, BlockX, BlockY, BlockZ, Line1, Line2, Line3, Line4);
 	if (Self == nullptr)
@@ -416,35 +476,6 @@ static int tolua_cWorld_SetSignLines(lua_State * tolua_S)
 	L.Push(res);
 	return 1;
 }
-
-
-
-
-
-class cLuaScheduledWorldTask :
-	public cWorld::cTask,
-	public cPluginLua::cResettable
-{
-public:
-	cLuaScheduledWorldTask(cPluginLua & a_Plugin, int a_FnRef) :
-		cPluginLua::cResettable(a_Plugin),
-		m_FnRef(a_FnRef)
-	{
-	}
-
-protected:
-	int m_FnRef;
-	
-	// cWorld::cTask overrides:
-	virtual void Run(cWorld & a_World) override
-	{
-		cCSLock Lock(m_CSPlugin);
-		if (m_Plugin != nullptr)
-		{
-			m_Plugin->Call(m_FnRef, &a_World);
-		}
-	}
-};
 
 
 
@@ -473,7 +504,7 @@ static int tolua_cWorld_ScheduleTask(lua_State * tolua_S)
 	{
 		return 0;
 	}
-	cWorld * World = (cWorld *)tolua_tousertype(tolua_S, 1, nullptr);
+	cWorld * World = reinterpret_cast<cWorld *>(tolua_tousertype(tolua_S, 1, nullptr));
 	if (World == nullptr)
 	{
 		return cManualBindings::lua_do_error(tolua_S, "Error in function call '#funcname#': Not called on an object instance");
@@ -486,11 +517,9 @@ static int tolua_cWorld_ScheduleTask(lua_State * tolua_S)
 		return cManualBindings::lua_do_error(tolua_S, "Error in function call '#funcname#': Could not get function reference of parameter #1");
 	}
 	
-	int DelayTicks = (int)tolua_tonumber(tolua_S, 2, 0);
-
-	auto task = std::make_shared<cLuaScheduledWorldTask>(*Plugin, FnRef);
-	Plugin->AddResettable(task);
-	World->ScheduleTask(DelayTicks, task);
+	auto ResettableTask = std::make_shared<cLuaWorldTask>(*Plugin, FnRef);
+	Plugin->AddResettable(ResettableTask);
+	World->ScheduleTask(static_cast<int>(tolua_tonumber(tolua_S, 2, 0)), std::bind(&cLuaWorldTask::Run, ResettableTask, std::placeholders::_1));
 	return 0;
 }
 
@@ -518,7 +547,8 @@ static int tolua_cWorld_TryGetHeight(lua_State * tolua_S)
 
 	// Get params:
 	cWorld * self = nullptr;
-	int BlockX, BlockZ;
+	int BlockX = 0;
+	int BlockZ = 0;
 	L.GetStackValues(1, self, BlockX, BlockZ);
 	if (self == nullptr)
 	{
@@ -550,6 +580,7 @@ void cManualBindings::BindWorld(lua_State * tolua_S)
 			tolua_function(tolua_S, "ChunkStay",                 tolua_cWorld_ChunkStay);
 			tolua_function(tolua_S, "DoWithBlockEntityAt",       DoWithXYZ<cWorld, cBlockEntity,        &cWorld::DoWithBlockEntityAt>);
 			tolua_function(tolua_S, "DoWithBeaconAt",            DoWithXYZ<cWorld, cBeaconEntity,       &cWorld::DoWithBeaconAt>);
+			tolua_function(tolua_S, "DoWithBrewingstandAt",      DoWithXYZ<cWorld, cBrewingstandEntity, &cWorld::DoWithBrewingstandAt>);
 			tolua_function(tolua_S, "DoWithChestAt",             DoWithXYZ<cWorld, cChestEntity,        &cWorld::DoWithChestAt>);
 			tolua_function(tolua_S, "DoWithDispenserAt",         DoWithXYZ<cWorld, cDispenserEntity,    &cWorld::DoWithDispenserAt>);
 			tolua_function(tolua_S, "DoWithDropSpenserAt",       DoWithXYZ<cWorld, cDropSpenserEntity,  &cWorld::DoWithDropSpenserAt>);
@@ -564,12 +595,14 @@ void cManualBindings::BindWorld(lua_State * tolua_S)
 			tolua_function(tolua_S, "FindAndDoWithPlayer",       DoWith<   cWorld, cPlayer,             &cWorld::FindAndDoWithPlayer>);
 			tolua_function(tolua_S, "DoWithPlayerByUUID",        DoWith<   cWorld, cPlayer,             &cWorld::DoWithPlayerByUUID>);
 			tolua_function(tolua_S, "ForEachBlockEntityInChunk", ForEachInChunk<cWorld, cBlockEntity,   &cWorld::ForEachBlockEntityInChunk>);
+			tolua_function(tolua_S, "ForEachBrewingstandInChunk", ForEachInChunk<cWorld, cBrewingstandEntity, &cWorld::ForEachBrewingstandInChunk>);
 			tolua_function(tolua_S, "ForEachChestInChunk",       ForEachInChunk<cWorld, cChestEntity,   &cWorld::ForEachChestInChunk>);
 			tolua_function(tolua_S, "ForEachEntity",             ForEach<       cWorld, cEntity,        &cWorld::ForEachEntity>);
 			tolua_function(tolua_S, "ForEachEntityInBox",        ForEachInBox<  cWorld, cEntity,        &cWorld::ForEachEntityInBox>);
 			tolua_function(tolua_S, "ForEachEntityInChunk",      ForEachInChunk<cWorld, cEntity,        &cWorld::ForEachEntityInChunk>);
 			tolua_function(tolua_S, "ForEachFurnaceInChunk",     ForEachInChunk<cWorld, cFurnaceEntity, &cWorld::ForEachFurnaceInChunk>);
 			tolua_function(tolua_S, "ForEachPlayer",             ForEach<       cWorld, cPlayer,        &cWorld::ForEachPlayer>);
+			tolua_function(tolua_S, "ForEachLoadedChunk",        tolua_cWorld_ForEachLoadedChunk);
 			tolua_function(tolua_S, "GetBlockInfo",              tolua_cWorld_GetBlockInfo);
 			tolua_function(tolua_S, "GetBlockTypeMeta",          tolua_cWorld_GetBlockTypeMeta);
 			tolua_function(tolua_S, "GetSignLines",              tolua_cWorld_GetSignLines);

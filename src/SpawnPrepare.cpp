@@ -20,7 +20,7 @@ protected:
 
 	cSpawnPrepare & m_SpawnPrepare;
 	
-	virtual void Call(int a_ChunkX, int a_ChunkZ) override
+	virtual void Call(int a_ChunkX, int a_ChunkZ, bool a_IsSuccess) override
 	{
 		m_SpawnPrepare.PreparedChunkCallback(a_ChunkX, a_ChunkZ);
 	}
@@ -64,7 +64,10 @@ void cSpawnPrepare::PrepareChunks(cWorld & a_World, int a_SpawnChunkX, int a_Spa
 	}  // for i
 
 	// Wait for the lighting thread to prepare everything. Event is set in the Call() callback:
-	prep.m_EvtFinished.Wait();
+	if (MaxIdx > 0)
+	{
+		prep.m_EvtFinished.Wait();
+	}
 }
 
 

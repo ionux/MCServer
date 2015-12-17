@@ -269,6 +269,44 @@ bool cPluginManager::CallHookBlockToPickups(
 
 
 
+bool cPluginManager::CallHookBrewingCompleted(cWorld & a_World, cBrewingstandEntity & a_Brewingstand)
+{
+	FIND_HOOK(HOOK_BREWING_COMPLETED);
+	VERIFY_HOOK;
+
+	for (PluginList::iterator itr = Plugins->second.begin(); itr != Plugins->second.end(); ++itr)
+	{
+		if ((*itr)->OnBrewingCompleted(a_World, a_Brewingstand))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+
+
+
+
+bool cPluginManager::CallHookBrewingCompleting(cWorld & a_World, cBrewingstandEntity & a_Brewingstand)
+{
+	FIND_HOOK(HOOK_BREWING_COMPLETING);
+	VERIFY_HOOK;
+
+	for (PluginList::iterator itr = Plugins->second.begin(); itr != Plugins->second.end(); ++itr)
+	{
+		if ((*itr)->OnBrewingCompleting(a_World, a_Brewingstand))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+
+
+
+
 bool cPluginManager::CallHookChat(cPlayer & a_Player, AString & a_Message)
 {
 	// Check if the message contains a command, execute it:
@@ -675,6 +713,25 @@ bool cPluginManager::CallHookHopperPushingItem(cWorld & a_World, cHopperEntity &
 
 
 
+bool cPluginManager::CallHookKilled(cEntity & a_Victim, TakeDamageInfo & a_TDI, AString & a_DeathMessage)
+{
+	FIND_HOOK(HOOK_KILLED);
+	VERIFY_HOOK;
+
+	for (PluginList::iterator itr = Plugins->second.begin(); itr != Plugins->second.end(); ++itr)
+	{
+		if ((*itr)->OnKilled(a_Victim, a_TDI, a_DeathMessage))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+
+
+
+
 bool cPluginManager::CallHookKilling(cEntity & a_Victim, cEntity * a_Killer, TakeDamageInfo & a_TDI)
 {
 	FIND_HOOK(HOOK_KILLING);
@@ -694,7 +751,7 @@ bool cPluginManager::CallHookKilling(cEntity & a_Victim, cEntity * a_Killer, Tak
 
 
 
-bool cPluginManager::CallHookLogin(cClientHandle & a_Client, int a_ProtocolVersion, const AString & a_Username)
+bool cPluginManager::CallHookLogin(cClientHandle & a_Client, UInt32 a_ProtocolVersion, const AString & a_Username)
 {
 	FIND_HOOK(HOOK_LOGIN);
 	VERIFY_HOOK;
@@ -1742,7 +1799,7 @@ bool cPluginManager::BindConsoleCommand(const AString & a_Command, cPlugin * a_P
 	{
 		if (cmd->second.m_Plugin == nullptr)
 		{
-			LOGWARNING("Console command \"%s\" is already bound internally by MCServer, cannot bind in plugin \"%s\".", a_Command.c_str(), a_Plugin->GetName().c_str());
+			LOGWARNING("Console command \"%s\" is already bound internally by Cuberite, cannot bind in plugin \"%s\".", a_Command.c_str(), a_Plugin->GetName().c_str());
 		}
 		else
 		{

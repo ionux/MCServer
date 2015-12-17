@@ -10,6 +10,7 @@
 
 // fwd:
 class cBlockEntityWithItems;
+class cBrewingstandEntity;
 class cChunkDesc;
 class cClientHandle;
 class cCommandOutputCallback;
@@ -75,6 +76,8 @@ public:
 	{
 		HOOK_BLOCK_SPREAD,
 		HOOK_BLOCK_TO_PICKUPS,
+		HOOK_BREWING_COMPLETING,
+		HOOK_BREWING_COMPLETED,
 		HOOK_CHAT,
 		HOOK_CHUNK_AVAILABLE,
 		HOOK_CHUNK_GENERATED,
@@ -94,6 +97,7 @@ public:
 		HOOK_HANDSHAKE,
 		HOOK_HOPPER_PULLING_ITEM,
 		HOOK_HOPPER_PUSHING_ITEM,
+		HOOK_KILLED,
 		HOOK_KILLING,
 		HOOK_LOGIN,
 		HOOK_PLAYER_BREAKING_BLOCK,
@@ -192,6 +196,8 @@ public:
 	// Calls for individual hooks. Each returns false if the action is to continue or true if the plugin wants to abort
 	bool CallHookBlockSpread              (cWorld & a_World, int a_BlockX, int a_BlockY, int a_BlockZ, eSpreadSource a_Source);
 	bool CallHookBlockToPickups           (cWorld & a_World, cEntity * a_Digger, int a_BlockX, int a_BlockY, int a_BlockZ, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta, cItems & a_Pickups);
+	bool CallHookBrewingCompleting        (cWorld & a_World, cBrewingstandEntity & a_Brewingstand);
+	bool CallHookBrewingCompleted         (cWorld & a_World, cBrewingstandEntity & a_Brewingstand);
 	bool CallHookChat                     (cPlayer & a_Player, AString & a_Message);
 	bool CallHookChunkAvailable           (cWorld & a_World, int a_ChunkX, int a_ChunkZ);
 	bool CallHookChunkGenerated           (cWorld & a_World, int a_ChunkX, int a_ChunkZ, cChunkDesc * a_ChunkDesc);
@@ -211,8 +217,9 @@ public:
 	bool CallHookHandshake                (cClientHandle & a_ClientHandle, const AString & a_Username);
 	bool CallHookHopperPullingItem        (cWorld & a_World, cHopperEntity & a_Hopper, int a_DstSlotNum, cBlockEntityWithItems & a_SrcEntity, int a_SrcSlotNum);
 	bool CallHookHopperPushingItem        (cWorld & a_World, cHopperEntity & a_Hopper, int a_SrcSlotNum, cBlockEntityWithItems & a_DstEntity, int a_DstSlotNum);
+	bool CallHookKilled		      (cEntity & a_Victim, TakeDamageInfo & a_TDI, AString & a_DeathMessage);
 	bool CallHookKilling                  (cEntity & a_Victim, cEntity * a_Killer, TakeDamageInfo & a_TDI);
-	bool CallHookLogin                    (cClientHandle & a_Client, int a_ProtocolVersion, const AString & a_Username);
+	bool CallHookLogin                    (cClientHandle & a_Client, UInt32 a_ProtocolVersion, const AString & a_Username);
 	bool CallHookPlayerAnimation          (cPlayer & a_Player, int a_Animation);
 	bool CallHookPlayerBreakingBlock      (cPlayer & a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, char a_BlockFace, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta);
 	bool CallHookPlayerBrokenBlock        (cPlayer & a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, char a_BlockFace, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta);

@@ -1,9 +1,9 @@
-MCServer [![Build Status](http://img.shields.io/travis/mc-server/MCServer/master.svg?style=flat)](https://travis-ci.org/mc-server/MCServer) [![Coverity Scan Build Status](https://img.shields.io/coverity/scan/1930.svg)](https://scan.coverity.com/projects/1930) [![weekly tips](http://img.shields.io/gratipay/cuberite_team.svg?style=flat)](http://gratipay.com/cuberite_team)
+Cuberite [![Build Status](http://img.shields.io/travis/cuberite/cuberite/master.svg?style=flat)](https://travis-ci.org/cuberite/cuberite) [![Coverity Scan Build Status](https://img.shields.io/coverity/scan/1930.svg)](https://scan.coverity.com/projects/1930)
 ========
 
-MCServer is a Minecraft-compatible multiplayer game server that is written in C++ and designed to be efficient with memory and CPU, as well as having a flexible Lua Plugin API. MCServer is compatible with the vanilla Minecraft client.
+Cuberite is a Minecraft-compatible multiplayer game server that is written in C++ and designed to be efficient with memory and CPU, as well as having a flexible Lua Plugin API. Cuberite is compatible with the vanilla Minecraft client.
 
-MCServer can run on Windows, *nix and Android operating systems. This includes Android phones and tablets as well as Raspberry Pis. 
+Cuberite can run on Windows, *nix and Android operating systems. This includes Android phones and tablets as well as Raspberry Pis. 
 
 We currently support Release 1.7 and 1.8 (not beta) Minecraft protocol versions.
 
@@ -11,38 +11,46 @@ Subscribe to [the newsletter](http://newsletter.cuberite.org/subscribe.htm) for 
 
 Installation
 ------------
-Hosted MCServer is available DIY on DigitalOcean: [![Install on DigitalOcean](http://doinstall.bearbin.net/button.svg)](http://doinstall.bearbin.net/install?url=https://github.com/mc-server/MCServer) and [Gamososm](https://gamocosm.com) also offers MCServer support.
 
-For Linux there is an easy installation method, just run this in your terminal:
+There are several ways to obtain Cuberite.
 
-    curl -s https://raw.githubusercontent.com/mc-server/MCServer/master/easyinstall.sh | sh
+#### Binaries
+ - The easiest method is downloading for Windows or Linux from the [Project site](http://cuberite.org/).
+ - You can use the EasyInstall script for Linux, which automatically downloads the correct binary. The script is described below.
+ - You can also obtain a binary from the [buildserver archive](http://builds.cuberite.org).
 
-For Windows, you just need to download a file and extract it:
+##### The EasyInstall script
+This Linux script will download the correct binary from the project site.
 
- - [Windows 32 bit](http://builds.cuberite.org/job/MCServer%20Windows%20x86/lastSuccessfulBuild/artifact/Install/MCServer.zip)
- - [Windows 64 bit](http://builds.cuberite.org/job/MCServer%20Windows%20x64/lastSuccessfulBuild/artifact/Install/MCServer.zip)
+    sh -c "$(wget -O - https://raw.githubusercontent.com/cuberite/cuberite/master/easyinstall.sh)"
 
-For other operating systems you need to download and compile yourself. This can be done either manually, or with this automatic script:
+#### Compiling
+ - You can compile automatically for Linux with the `compile.sh` script. The script is described below.
+ - You can also compile manually. See [COMPILING.md](https://github.com/cuberite/cuberite/blob/master/COMPILING.md).
 
-    bash -c "$(wget -O - https://raw.githubusercontent.com/mc-server/MCServer/master/compile.sh)"
+Compiling may provide better performance performance (1.5-3x as fast) and it supports more operating systems. 
 
-There is also an archive of binary builds on the buildserver: http://builds.cuberite.org
+##### The compile.sh script
+This script downloads the source code and compiles it. The script is smart enough to notify you of missing dependencies and instructing you on how to install them. The script doesn't work for Windows.
 
-Compiling the server yourself has other benefits: you may get better performance performance (1.5-3x as fast) and it supports more operating systems. See the [COMPILING.md](https://github.com/mc-server/MCServer/blob/master/COMPILING.md) file for more details.
+    sh -c "$(wget -O - https://raw.githubusercontent.com/cuberite/cuberite/master/compile.sh)"
+
+#### Hosted services
+ - Hosted Cuberite is available DIY on DigitalOcean: [![Install on DigitalOcean](http://doinstall.bearbin.net/button.svg)](http://doinstall.bearbin.net/install?url=https://github.com/cuberite/cuberite) and [Gamocosm](https://gamocosm.com) also offers Cuberite support.
 
 Contributing
 ------------
 
-MCServer is licensed under the Apache License V2, and we welcome anybody to fork and submit a Pull Request back with their changes, and if you want to join as a permanent member we can add you to the team.
+Cuberite is licensed under the Apache License V2, and we welcome anybody to fork and submit a Pull Request back with their changes, and if you want to join as a permanent member we can add you to the team.
 
-Check out the [CONTRIBUTING.md](https://github.com/mc-server/MCServer/blob/master/CONTRIBUTING.md) file for more details.
+Check out the [CONTRIBUTING.md](https://github.com/cuberite/cuberite/blob/master/CONTRIBUTING.md) file for more details.
 
 Other Stuff
 -----------
 
-For other stuff, including plugins and discussion, check out the [forums](http://forum.mc-server.org) and [Plugin API](http://mc-server.xoft.cz/LuaAPI/).
+For other stuff, including plugins and discussion, check out the [forums](http://forum.mc-server.org) and [Plugin API](http://api-docs.cuberite.org).
 
-Support Us on Gratipay: [![Support via Gratipay](http://img.shields.io/gittip/cuberite_team.svg)](https://www.gratipay.com/cuberite_team)
+[Support Us on Bountysource](https://bountysource.com/teams/cuberite)
 
-Travis CI: [![Build Status](http://img.shields.io/travis/mc-server/MCServer.svg)](https://travis-ci.org/mc-server/MCServer)
+Travis CI: [![travis build status shield](http://img.shields.io/travis/cuberite/cuberite.svg)](https://travis-ci.org/cuberite/cuberite)
 

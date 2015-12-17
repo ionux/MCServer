@@ -15,6 +15,7 @@
 #include "../Scoreboard.h"
 #include "../Map.h"
 #include "../ByteBuffer.h"
+#include "../EffectID.h"
 
 #include <array>
 
@@ -59,7 +60,7 @@ public:
 
 	virtual ~cProtocol() {}
 	
-	/// Called when client sends some data
+	/** Called when client sends some data */
 	virtual void DataReceived(const char * a_Data, size_t a_Size) = 0;
 	
 	// Sending stuff to clients (alphabetically sorted):
@@ -68,14 +69,8 @@ public:
 	virtual void SendBlockBreakAnim             (UInt32 a_EntityID, int a_BlockX, int a_BlockY, int a_BlockZ, char a_Stage) = 0;
 	virtual void SendBlockChange                (int a_BlockX, int a_BlockY, int a_BlockZ, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta) = 0;
 	virtual void SendBlockChanges               (int a_ChunkX, int a_ChunkZ, const sSetBlockVector & a_Changes) = 0;
-	virtual void SendChat                       (const AString & a_Message) = 0;
-	virtual void SendChat                       (const cCompositeChat & a_Message) = 0;
-	virtual void SendChatAboveActionBar         (const AString & a_Message) = 0;
-	virtual void SendChatAboveActionBar         (const cCompositeChat & a_Message) = 0;
-	virtual void SendChatSystem                 (const AString & a_Message) = 0;
-	virtual void SendChatSystem                 (const cCompositeChat & a_Message) = 0;
-	virtual void SendChatType                   (const AString & a_Message, eChatType type) = 0;
-	virtual void SendChatType                   (const cCompositeChat & a_Message, eChatType type) = 0;
+	virtual void SendChat                       (const AString & a_Message, eChatType a_Type) = 0;
+	virtual void SendChat                       (const cCompositeChat & a_Message, eChatType a_Type, bool a_ShouldUseChatPrefixes) = 0;
 	virtual void SendChunkData                  (int a_ChunkX, int a_ChunkZ, cChunkDataSerializer & a_Serializer) = 0;
 	virtual void SendCollectEntity              (const cEntity & a_Entity, const cPlayer & a_Player) = 0;
 	virtual void SendDestroyEntity              (const cEntity & a_Entity) = 0;
@@ -96,12 +91,10 @@ public:
 	virtual void SendHealth                     (void) = 0;
 	virtual void SendHideTitle                  (void) = 0;
 	virtual void SendInventorySlot              (char a_WindowID, short a_SlotNum, const cItem & a_Item) = 0;
-	virtual void SendKeepAlive                  (int a_PingID) = 0;
+	virtual void SendKeepAlive                  (UInt32 a_PingID) = 0;
 	virtual void SendLogin                      (const cPlayer & a_Player, const cWorld & a_World) = 0;
 	virtual void SendLoginSuccess               (void) = 0;
-	virtual void SendMapColumn                  (int a_ID, int a_X, int a_Y, const Byte * a_Colors, unsigned int a_Length, unsigned int m_Scale) = 0;
-	virtual void SendMapDecorators              (int a_ID, const cMapDecoratorList & a_Decorators, unsigned int m_Scale) = 0;
-	virtual void SendMapInfo                    (int a_ID, unsigned int a_Scale) = 0;
+	virtual void SendMapData                    (const cMap & a_Map, int a_DataStartX, int a_DataStartY) = 0;
 	virtual void SendPaintingSpawn              (const cPainting & a_Painting) = 0;
 	virtual void SendPickupSpawn                (const cPickup & a_Pickup) = 0;
 	virtual void SendPlayerAbilities            (void) = 0;
@@ -131,7 +124,7 @@ public:
 	virtual void SendSetTitle                   (const cCompositeChat & a_Title) = 0;
 	virtual void SendSetRawTitle                (const AString & a_Title) = 0;
 	virtual void SendSoundEffect                (const AString & a_SoundName, double a_X, double a_Y, double a_Z, float a_Volume, float a_Pitch) = 0;
-	virtual void SendSoundParticleEffect        (int a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data) = 0;
+	virtual void SendSoundParticleEffect        (const EffectID a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data) = 0;
 	virtual void SendSpawnFallingBlock          (const cFallingBlock & a_FallingBlock) = 0;
 	virtual void SendSpawnMob                   (const cMonster & a_Mob) = 0;
 	virtual void SendSpawnObject                (const cEntity & a_Entity, char a_ObjectType, int a_ObjectData, Byte a_Yaw, Byte a_Pitch) = 0;
@@ -152,7 +145,7 @@ public:
 	virtual void SendWindowOpen                 (const cWindow & a_Window) = 0;
 	virtual void SendWindowProperty             (const cWindow & a_Window, short a_Property, short a_Value) = 0;
 
-	/// Returns the ServerID used for authentication through session.minecraft.net
+	/** Returns the ServerID used for authentication through session.minecraft.net */
 	virtual AString GetAuthServerID(void) = 0;
 
 protected:

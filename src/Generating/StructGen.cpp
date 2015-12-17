@@ -273,116 +273,6 @@ int cStructGenTrees::GetNumTrees(
 
 
 ////////////////////////////////////////////////////////////////////////////////
-// cStructGenOreNests:
-
-void cStructGenOreNests::GenFinish(cChunkDesc & a_ChunkDesc)
-{
-	int ChunkX = a_ChunkDesc.GetChunkX();
-	int ChunkZ = a_ChunkDesc.GetChunkZ();
-	cChunkDef::BlockTypes & BlockTypes = a_ChunkDesc.GetBlockTypes();
-	cChunkDesc::BlockNibbleBytes & BlockMetas = a_ChunkDesc.GetBlockMetasUncompressed();
-
-	int seq = 1;
-	
-	// Generate the ores from the ore list.
-	for (OreList::const_iterator itr = m_OreList.begin(); itr != m_OreList.end(); ++itr)
-	{
-		GenerateOre(ChunkX, ChunkZ, itr->BlockType, itr->BlockMeta, itr->MaxHeight, itr->NumNests, itr->NestSize, BlockTypes, BlockMetas, seq);
-		seq++;
-	}
-}
-
-
-
-
-
-void cStructGenOreNests::GenerateOre(int a_ChunkX, int a_ChunkZ, BLOCKTYPE a_OreType, NIBBLETYPE a_BlockMeta, int a_MaxHeight, int a_NumNests, int a_NestSize, cChunkDef::BlockTypes & a_BlockTypes, cChunkDesc::BlockNibbleBytes & a_BlockMetas, int a_Seq)
-{
-	// This function generates several "nests" of ore, each nest consisting of number of ore blocks relatively adjacent to each other.
-	// It does so by making a random XYZ walk and adding ore along the way in cuboids of different (random) sizes
-	// Only stone gets replaced with ore, all other blocks stay (so the nest can actually be smaller than specified).
-	
-	for (int i = 0; i < a_NumNests; i++)
-	{
-		int Nestrnd = m_Noise.IntNoise3DInt(a_ChunkX + i, a_Seq, a_ChunkZ + 64 * i) / 8;
-		int BaseX = Nestrnd % cChunkDef::Width;
-		Nestrnd /= cChunkDef::Width;
-		int BaseZ = Nestrnd % cChunkDef::Width;
-		Nestrnd /= cChunkDef::Width;
-		int BaseY = Nestrnd % a_MaxHeight;
-		Nestrnd /= a_MaxHeight;
-		int NestSize = a_NestSize + (Nestrnd % (a_NestSize / 4));  // The actual nest size may be up to 1 / 4 larger
-		int Num = 0;
-		while (Num < NestSize)
-		{
-			// Put a cuboid around [BaseX, BaseY, BaseZ]
-			int rnd = m_Noise.IntNoise3DInt(a_ChunkX + 64 * i, 2 * a_Seq + Num, a_ChunkZ + 32 * i) / 8;
-			int xsize = rnd % 2;
-			int ysize = (rnd / 4) % 2;
-			int zsize = (rnd / 16) % 2;
-			rnd >>= 8;
-			for (int x = xsize; x >= 0; --x)
-			{
-				int BlockX = BaseX + x;
-				if ((BlockX < 0) || (BlockX >= cChunkDef::Width))
-				{
-					Num++;  // So that the cycle finishes even if the base coords wander away from the chunk
-					continue;
-				}
-				for (int y = ysize; y >= 0; --y)
-				{
-					int BlockY = BaseY + y;
-					if ((BlockY < 0) || (BlockY >= cChunkDef::Height))
-					{
-						Num++;  // So that the cycle finishes even if the base coords wander away from the chunk
-						continue;
-					}
-					for (int z = zsize; z >= 0; --z)
-					{
-						int BlockZ = BaseZ + z;
-						if ((BlockZ < 0) || (BlockZ >= cChunkDef::Width))
-						{
-							Num++;  // So that the cycle finishes even if the base coords wander away from the chunk
-							continue;
-						}
-
-						int Index = cChunkDef::MakeIndexNoCheck(BlockX, BlockY, BlockZ);
-						if (a_BlockTypes[Index] == m_ToReplace)
-						{
-							a_BlockTypes[Index] = a_OreType;
-							a_BlockMetas[Index] = a_BlockMeta;
-						}
-						Num++;
-					}  // for z
-				}  // for y
-			}  // for x
-			
-			// Move the base to a neighbor voxel
-			switch (rnd % 4)
-			{
-				case 0: BaseX--; break;
-				case 1: BaseX++; break;
-			}
-			switch ((rnd >> 3) % 4)
-			{
-				case 0: BaseY--; break;
-				case 1: BaseY++; break;
-			}
-			switch ((rnd >> 6) % 4)
-			{
-				case 0: BaseZ--; break;
-				case 1: BaseZ++; break;
-			}
-		}  // while (Num < NumBlocks)
-	}  // for i - NumNests
-}
-
-
-
-
-
-
-////////////////////////////////////////////////////////////////////////////////
 // cStructGenLakes:
 
 void cStructGenLakes::GenFinish(cChunkDesc & a_ChunkDesc)
@@ -624,23 +514,23 @@ cStructGenDistortedMembraneOverhangs::cStructGenDistortedMembraneOverhangs(int a
 
 void cStructGenDistortedMembraneOverhangs::GenFinish(cChunkDesc & a_ChunkDesc)
 {
-	const NOISE_DATATYPE Frequency = (NOISE_DATATYPE)16;
-	const NOISE_DATATYPE Amount = (NOISE_DATATYPE)1;
+	const NOISE_DATATYPE Frequency = static_cast<NOISE_DATATYPE>(16);
+	const NOISE_DATATYPE Amount = static_cast<NOISE_DATATYPE>(1);
 	for (int y = 50; y < 128; y++)
 	{
-		NOISE_DATATYPE NoiseY = (NOISE_DATATYPE)y / 32;
+		NOISE_DATATYPE NoiseY = static_cast<NOISE_DATATYPE>(y) / 32;
 		// TODO: proper water level - where to get?
 		BLOCKTYPE ReplacementBlock = (y > 62) ? E_BLOCK_AIR : E_BLOCK_STATIONARY_WATER;
 		for (int z = 0; z < cChunkDef::Width; z++)
 		{
-			NOISE_DATATYPE NoiseZ = ((NOISE_DATATYPE)(a_ChunkDesc.GetChunkZ() * cChunkDef::Width + z)) / Frequency;
+			NOISE_DATATYPE NoiseZ = static_cast<NOISE_DATATYPE>(a_ChunkDesc.GetChunkZ() * cChunkDef::Width + z) / Frequency;
 			for (int x = 0; x < cChunkDef::Width; x++)
 			{
-				NOISE_DATATYPE NoiseX = ((NOISE_DATATYPE)(a_ChunkDesc.GetChunkX() * cChunkDef::Width + x)) / Frequency;
+				NOISE_DATATYPE NoiseX = static_cast<NOISE_DATATYPE>(a_ChunkDesc.GetChunkX() * cChunkDef::Width + x) / Frequency;
 				NOISE_DATATYPE DistortX = m_NoiseX.CubicNoise3D(NoiseX, NoiseY, NoiseZ) * Amount;
 				NOISE_DATATYPE DistortY = m_NoiseY.CubicNoise3D(NoiseX, NoiseY, NoiseZ) * Amount;
 				NOISE_DATATYPE DistortZ = m_NoiseZ.CubicNoise3D(NoiseX, NoiseY, NoiseZ) * Amount;
-				int MembraneHeight = 96 - (int)((DistortY + m_NoiseH.CubicNoise2D(NoiseX + DistortX, NoiseZ + DistortZ)) * 30);
+				int MembraneHeight = 96 - static_cast<int>((DistortY + m_NoiseH.CubicNoise2D(NoiseX + DistortX, NoiseZ + DistortZ)) * 30);
 				if (MembraneHeight < y)
 				{
 					a_ChunkDesc.SetBlockType(x, y, z, ReplacementBlock);

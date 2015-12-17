@@ -16,7 +16,7 @@
 // tolua_begin
 /** Biome IDs
 The first batch corresponds to the clientside biomes, used by MineCraft.
-BiomeIDs over 255 are used by MCServer internally and are translated to MC biomes before sending them to client
+BiomeIDs over 255 are used by Cuberite internally and are translated to MC biomes before sending them to client
 */
 enum EMCSBiome
 {
@@ -104,6 +104,28 @@ enum EMCSBiome
 	biMaxVariantBiome = biNumVariantBiomes - 1,  // The maximum biome value
 } ;
 
+// tolua_end
+
+
+
+
+
+/** Hash for EMCSBiome, so that it can be used in std::unordered_map etc. */
+struct BiomeHasher
+{
+public:
+	std::size_t operator() (const EMCSBiome a_Biome) const
+	{
+		return static_cast<std::size_t>(a_Biome);
+	}
+};
+
+
+
+
+
+// tolua_begin
+
 /** Translates a biome string to biome enum. Takes either a number or a biome alias (built-in). Returns biInvalidBiome on failure. */
 extern EMCSBiome StringToBiome(const AString & a_BiomeString);
 
@@ -129,7 +151,7 @@ extern bool IsBiomeVeryCold(EMCSBiome a_Biome);
 Doesn't report Very Cold biomes, use IsBiomeVeryCold() for those. */
 extern bool IsBiomeCold(EMCSBiome a_Biome);
 
-/** Returns the height when a biome when a biome starts snowing.*/
+/** Returns the height when a biome when a biome starts snowing. */
 extern int GetSnowStartHeight(EMCSBiome a_Biome);
 
 // tolua_end

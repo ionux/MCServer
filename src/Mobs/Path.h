@@ -10,7 +10,7 @@ class cPath;
 #include "../FastRandom.h"
 #ifdef COMPILING_PATHFIND_DEBUGGER
 	/* Note: the COMPILING_PATHFIND_DEBUGGER flag is used by Native / WiseOldMan95 to debug
-	this class outside of MCServer. This preprocessor flag is never set when compiling MCServer. */
+	this class outside of Cuberite. This preprocessor flag is never set when compiling Cuberite. */
 	#include "PathFinderIrrlicht_Head.h"
 #endif
 
@@ -73,66 +73,112 @@ public:
 		int a_MaxUp = 1, int a_MaxDown = 1
 	);
 
-	/** Destroys the path and frees its memory. */
-	~cPath();
+	/** Creates a dummy path which does nothing except returning false when isValid is called. */
+	cPath();
+
+	/** delete default constructors */
+	cPath(const cPath & a_other) = delete;
+	cPath(cPath && a_other) = delete;
+
+	/** delete default assignment operators */
+	cPath & operator=(const cPath & a_other) = delete;
+	cPath & operator=(cPath && a_other) = delete;
 
 	/** Performs part of the path calculation and returns the appropriate status.
 	If NEARBY_FOUND is returned, it means that the destination is not reachable, but a nearby destination
 	is reachable. If the user likes the alternative destination, they can call AcceptNearbyPath to treat the path as found,
-	and to make consequent calls to step return PATH_FOUND*/
-	ePathFinderStatus Step(cChunk & a_Chunk);
+	and to make consequent calls to step return PATH_FOUND */
+	ePathFinderStatus CalculationStep(cChunk & a_Chunk);
 
 	/** Called after the PathFinder's step returns NEARBY_FOUND.
 	Changes the PathFinder status from NEARBY_FOUND to PATH_FOUND, returns the nearby destination that
 	the PathFinder found a path to. */
 	Vector3i AcceptNearbyPath();
 
-	/* Point retrieval functions, inlined for performance. */
+	// Point retrieval functions, inlined for performance:
+
 	/** Returns the next point in the path. */
 	inline Vector3d GetNextPoint()
 	{
 		ASSERT(m_Status == ePathFinderStatus::PATH_FOUND);
-		Vector3i Point = m_PathPoints[m_PathPoints.size() - 1 - (++m_CurrentPoint)];
+		ASSERT(m_CurrentPoint < m_PathPoints.size());
+		Vector3i Point = m_PathPoints[m_PathPoints.size() - 1 - m_CurrentPoint];
+		++m_CurrentPoint;
 		return Vector3d(Point.x + m_HalfWidth, Point.y, Point.z + m_HalfWidth);
 	}
-	/** Checks whether this is the last point or not. Never call getnextPoint when this is true. */
-	inline bool IsLastPoint()
+
+
+	/** Checks if we have no more waypoints to return. Never call getnextPoint when this is true. */
+	inline bool NoMoreWayPoints() const
 	{
 		ASSERT(m_Status == ePathFinderStatus::PATH_FOUND);
-		return (m_CurrentPoint == m_PathPoints.size() - 1);
+		return (m_CurrentPoint == m_PathPoints.size());
 	}
-	inline bool IsFirstPoint()
+
+	/** Returns true if GetNextPoint() was never called for this Path. */
+	inline bool IsFirstPoint() const
 	{
 		ASSERT(m_Status == ePathFinderStatus::PATH_FOUND);
 		return (m_CurrentPoint == 0);
 	}
-	/** Get the point at a_index. Remark: Internally, the indexes are reversed. */
-	inline Vector3d GetPoint(size_t a_index)
+
+	/** Returns true if this path is properly initialized.
+	Returns false if this path was initialized with an empty constructor.
+	If false, the path is unusable and you should not call any methods. */
+	inline bool IsValid() const
+	{
+		return m_IsValid;
+	}
+
+	/** The amount of waypoints left to return. */
+	inline size_t WayPointsLeft() const
 	{
 		ASSERT(m_Status == ePathFinderStatus::PATH_FOUND);
-		ASSERT(a_index < m_PathPoints.size());
-		Vector3i Point = m_PathPoints[m_PathPoints.size() - 1 - a_index];
-		return Vector3d(Point.x + m_HalfWidth, Point.y, Point.z + m_HalfWidth);
+		return m_PathPoints.size() - m_CurrentPoint;
 	}
-	/** Returns the total number of points this path has. */
-	inline size_t GetPointCount()
-	{
-		if (m_Status != ePathFinderStatus::PATH_FOUND)
-		{
-			return 0;
-		}
-		return m_PathPoints.size();
-	}
+
+	/** Recreates a pathfinder instance. A Mob will probably need a single pathfinder instance for its entire life.
+
+	Note that if you have a man-sized mob (1x1x2, zombies, etc), you are advised to call this function without parameters
+	because the declaration might change in later version of the pathFinder, and a parameter-less call always assumes a man-sized mob.
+
+	If your mob is not man-sized, you are advised to use cPath(width, height), this would be compatible with future versions,
+	but please be aware that as of now those parameters will be ignored and your mob will be assumed to be man sized.
+
+	@param a_BoundingBoxWidth the character's boundingbox width in blocks. Currently the parameter is ignored and 1 is assumed.
+	@param a_BoundingBoxHeight the character's boundingbox width in blocks. Currently the parameter is ignored and 2 is assumed.
+	@param a_MaxUp the character's max jump height in blocks. Currently the parameter is ignored and 1 is assumed.
+	@param a_MaxDown How far is the character willing to fall? Currently the parameter is ignored and 1 is assumed. */
+	/** Attempts to find a path starting from source to destination.
+	After calling this, you are expected to call Step() once per tick or once per several ticks until it returns true. You should then call getPath() to obtain the path.
+	Calling this before a path is found resets the current path and starts another search.
+	@param a_StartingPoint The function expects this position to be the lowest block the mob is in, a rule of thumb: "The block where the Zombie's knees are at".
+	@param a_EndingPoint "The block where the Zombie's knees want to be".
+	@param a_MaxSteps The maximum steps before giving up. */
+	void Reset(
+		cChunk & a_Chunk,
+		const Vector3d & a_StartingPoint, const Vector3d & a_EndingPoint, int a_MaxSteps,
+		double a_BoundingBoxWidth, double a_BoundingBoxHeight,
+		int a_MaxUp = 1, int a_MaxDown = 1
+	);
+
+
+
 
 private:
 
 	/* General */
 	bool IsSolid(const Vector3i & a_Location);  // Query our hosting world and ask it if there's a solid at a_location.
-	bool Step_Internal();  // The public version just calls this version * CALCULATIONS_PER_CALL times.
+	bool StepOnce();  // The public version just calls this version * CALCULATIONS_PER_CALL times.
 	void FinishCalculation();  // Clears the memory used for calculating the path.
 	void FinishCalculation(ePathFinderStatus a_NewStatus);  // Clears the memory used for calculating the path and changes the status.
 	void AttemptToFindAlternative();
 	void BuildPath();
+	/** Handles all logic associated with reseting the path to a clean state */
+	void ResetImpl(
+		const Vector3d & a_StartingPoint, const Vector3d & a_EndingPoint,
+		double a_BoundingBoxWidth, double a_BoundingBoxHeight
+	);
 
 	/* Openlist and closedlist management */
 	void OpenListAdd(cPathCell * a_Cell);
@@ -157,6 +203,7 @@ private:
 
 	/* Control fields */
 	ePathFinderStatus m_Status;
+	bool m_IsValid;
 
 	/* Final path fields */
 	size_t m_CurrentPoint;

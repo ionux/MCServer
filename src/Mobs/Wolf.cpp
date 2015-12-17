@@ -18,7 +18,7 @@ cWolf::cWolf(void) :
 	m_IsBegging(false),
 	m_IsAngry(false),
 	m_OwnerName(""),
-	m_CollarColor(14)
+	m_CollarColor(E_META_DYE_ORANGE)
 {
 	m_RelativeWalkSpeed = 2;
 }
@@ -45,7 +45,7 @@ bool cWolf::DoTakeDamage(TakeDamageInfo & a_TDI)
 
 
 
-void cWolf::Attack(std::chrono::milliseconds a_Dt)
+bool cWolf::Attack(std::chrono::milliseconds a_Dt)
 {
 	UNUSED(a_Dt);
 
@@ -53,13 +53,15 @@ void cWolf::Attack(std::chrono::milliseconds a_Dt)
 	{
 		if (static_cast<cPlayer *>(m_Target)->GetName() != m_OwnerName)
 		{
-			super::Attack(a_Dt);
+			return super::Attack(a_Dt);
 		}
 	}
 	else
 	{
-		super::Attack(a_Dt);
+		return super::Attack(a_Dt);
 	}
+	
+	return false;
 }
 
 
@@ -122,7 +124,7 @@ void cWolf::OnRightClicked(cPlayer & a_Player)
 			{
 				if (a_Player.GetName() == m_OwnerName)  // Is the player the owner of the dog?
 				{
-					SetCollarColor(15 - a_Player.GetEquippedItem().m_ItemDamage);
+					SetCollarColor(a_Player.GetEquippedItem().m_ItemDamage);
 					if (!a_Player.IsGameModeCreative())
 					{
 						a_Player.GetInventory().RemoveOneEquippedItem();

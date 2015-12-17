@@ -31,6 +31,7 @@ class MTRand;
 class cPlayer;
 class cChunkMap;
 class cBeaconEntity;
+class cBrewingstandEntity;
 class cBoundingBox;
 class cChestEntity;
 class cChunkDataCallback;
@@ -54,6 +55,7 @@ class cSetChunkData;
 typedef std::list<cClientHandle *>         cClientHandleList;
 typedef cItemCallback<cEntity>             cEntityCallback;
 typedef cItemCallback<cBeaconEntity>       cBeaconCallback;
+typedef cItemCallback<cBrewingstandEntity> cBrewingstandCallback;
 typedef cItemCallback<cChestEntity>        cChestCallback;
 typedef cItemCallback<cDispenserEntity>    cDispenserCallback;
 typedef cItemCallback<cFurnaceEntity>      cFurnaceCallback;
@@ -256,6 +258,9 @@ public:
 	/** Calls the callback for each block entity; returns true if all block entities processed, false if the callback aborted by returning true */
 	bool ForEachBlockEntity(cBlockEntityCallback & a_Callback);  // Lua-accessible
 
+	/** Calls the callback for each brewingstand; returns true if all brewingstands processed, false if the callback aborted by returning true */
+	bool ForEachBrewingstand(cBrewingstandCallback & a_Callback);  // Lua-accessible
+
 	/** Calls the callback for each chest; returns true if all chests processed, false if the callback aborted by returning true */
 	bool ForEachChest(cChestCallback & a_Callback);  // Lua-accessible
 
@@ -278,6 +283,9 @@ public:
 	bool DoWithRedstonePoweredEntityAt(int a_BlockX, int a_BlockY, int a_BlockZ, cRedstonePoweredCallback & a_Callback);
 	/** Calls the callback for the beacon at the specified coords; returns false if there's no beacon at those coords, true if found */
 	bool DoWithBeaconAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBeaconCallback & a_Callback);  // Lua-acessible
+
+	/** Calls the callback for the brewingstand at the specified coords; returns false if there's no brewingstand at those coords, true if found */
+	bool DoWithBrewingstandAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBrewingstandCallback & a_Callback);  // Lua-acessible
 
 	/** Calls the callback for the chest at the specified coords; returns false if there's no chest at those coords, true if found */
 	bool DoWithChestAt(int a_BlockX, int a_BlockY, int a_BlockZ, cChestCallback & a_Callback);  // Lua-acessible
@@ -309,7 +317,9 @@ public:
 	/** Retrieves the test on the sign at the specified coords; returns false if there's no sign at those coords, true if found */
 	bool GetSignLines (int a_BlockX, int a_BlockY, int a_BlockZ, AString & a_Line1, AString & a_Line2, AString & a_Line3, AString & a_Line4);  // Lua-accessible
 
-	void UseBlockEntity(cPlayer * a_Player, int a_X, int a_Y, int a_Z);  // [x, y, z] in world block coords
+	/** Use block entity on coordinate.
+	returns true if the use was successful, return false to use the block as a "normal" block */
+	bool UseBlockEntity(cPlayer * a_Player, int a_X, int a_Y, int a_Z);  // [x, y, z] in world block coords
 
 	void CalculateHeightmap(const BLOCKTYPE * a_BlockTypes);
 
@@ -319,7 +329,6 @@ public:
 	void BroadcastBlockAction        (int a_BlockX, int a_BlockY, int a_BlockZ, char a_Byte1, char a_Byte2, BLOCKTYPE a_BlockType, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastBlockBreakAnimation(UInt32 a_EntityID, int a_BlockX, int a_BlockY, int a_BlockZ, char a_Stage, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastBlockEntity        (int a_BlockX, int a_BlockY, int a_BlockZ, const cClientHandle * a_Exclude = nullptr);
-	void BroadcastChunkData          (cChunkDataSerializer & a_Serializer, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastCollectEntity      (const cEntity & a_Entity, const cPlayer & a_Player, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastDestroyEntity      (const cEntity & a_Entity, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastEntityEffect       (const cEntity & a_Entity, int a_EffectID, int a_Amplifier, short a_Duration, const cClientHandle * a_Exclude = nullptr);
@@ -335,7 +344,7 @@ public:
 	void BroadcastParticleEffect     (const AString & a_ParticleName, float a_SrcX, float a_SrcY, float a_SrcZ, float a_OffsetX, float a_OffsetY, float a_OffsetZ, float a_ParticleData, int a_ParticleAmount, cClientHandle * a_Exclude = nullptr);
 	void BroadcastRemoveEntityEffect (const cEntity & a_Entity, int a_EffectID, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastSoundEffect        (const AString & a_SoundName, double a_X, double a_Y, double a_Z, float a_Volume, float a_Pitch, const cClientHandle * a_Exclude = nullptr);
-	void BroadcastSoundParticleEffect(int a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data, const cClientHandle * a_Exclude = nullptr);
+	void BroadcastSoundParticleEffect(const EffectID a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastSpawnEntity        (cEntity & a_Entity, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastThunderbolt        (int a_BlockX, int a_BlockY, int a_BlockZ, const cClientHandle * a_Exclude = nullptr);
 	void BroadcastUseBed             (const cEntity & a_Entity, int a_BlockX, int a_BlockY, int a_BlockZ);
@@ -440,7 +449,10 @@ public:
 	void SetAlwaysTicked(bool a_AlwaysTicked);
 
 	// Makes a copy of the list
-	cClientHandleList GetAllClients(void) const {return m_LoadedByClient; }
+	cClientHandleList GetAllClients(void) const
+	{
+		return cClientHandleList(m_LoadedByClient.begin(), m_LoadedByClient.end());
+	}
 
 private:
 
@@ -480,9 +492,9 @@ private:
 	sSetBlockQueueVector m_SetBlockQueue;  ///< Block changes that are queued to a specific tick
 	
 	// A critical section is not needed, because all chunk access is protected by its parent ChunkMap's csLayers
-	cClientHandleList  m_LoadedByClient;
-	cEntityList        m_Entities;
-	cBlockEntityList   m_BlockEntities;
+	std::vector<cClientHandle *> m_LoadedByClient;
+	cEntityList                  m_Entities;
+	cBlockEntityList             m_BlockEntities;
 	
 	/** Number of times the chunk has been requested to stay (by various cChunkStay objects); if zero, the chunk can be unloaded */
 	int m_StayCount;

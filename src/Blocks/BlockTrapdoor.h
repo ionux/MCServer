@@ -3,6 +3,7 @@
 
 #include "BlockHandler.h"
 #include "MetaRotator.h"
+#include "../EffectID.h"
 
 
 
@@ -27,20 +28,22 @@ public:
 		return true;
 	}
 
-	virtual void OnUse(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace, int a_CursorX, int a_CursorY, int a_CursorZ) override
+	virtual bool OnUse(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace, int a_CursorX, int a_CursorY, int a_CursorZ) override
 	{
 		if (m_BlockType == E_BLOCK_IRON_TRAPDOOR)
 		{
 			// Iron doors can only be toggled by redstone, not by right-clicking
-			return;
+			return false;
 		}
 
 		// Flip the ON bit on / off using the XOR bitwise operation
 		NIBBLETYPE Meta = (a_ChunkInterface.GetBlockMeta(a_BlockX, a_BlockY, a_BlockZ) ^ 0x04);
 		a_ChunkInterface.SetBlockMeta(a_BlockX, a_BlockY, a_BlockZ, Meta);
 		
-		cWorld * World = (cWorld *) &a_WorldInterface;
-		World->BroadcastSoundParticleEffect(1003, a_BlockX, a_BlockY, a_BlockZ, 0, a_Player->GetClientHandle());
+		cWorld * World = static_cast<cWorld *>(&a_WorldInterface);
+		World->BroadcastSoundParticleEffect(EffectID::SFX_RANDOM_DOOR_OPEN_CLOSE, a_BlockX, a_BlockY, a_BlockZ, 0, a_Player->GetClientHandle());
+
+		return true;
 	}
 
 	virtual void OnCancelRightClick(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace) override
@@ -65,7 +68,6 @@ public:
 		}
 		return true;
 	}
-	
 
 	inline static NIBBLETYPE BlockFaceToMetaData(eBlockFace a_BlockFace)
 	{
@@ -89,7 +91,6 @@ public:
 		#endif
 	}
 
-
 	inline static eBlockFace BlockMetaDataToBlockFace(NIBBLETYPE a_Meta)
 	{
 		switch (a_Meta & 0x3)
@@ -106,7 +107,6 @@ public:
 		}
 	}
 
-
 	virtual bool CanBeAt(cChunkInterface & a_ChunkInterface, int a_RelX, int a_RelY, int a_RelZ, const cChunk & a_Chunk) override
 	{
 		NIBBLETYPE Meta;
@@ -117,6 +117,21 @@ public:
 		a_Chunk.UnboundedRelGetBlockType(a_RelX, a_RelY, a_RelZ, BlockIsOn);
 
 		return ((a_RelY > 0) && cBlockInfo::IsSolid(BlockIsOn));
+	}
+
+	virtual ColourID GetMapBaseColourID(NIBBLETYPE a_Meta) override
+	{
+		UNUSED(a_Meta);
+		switch (m_BlockType)
+		{
+			case E_BLOCK_TRAPDOOR: return 13;
+			case E_BLOCK_IRON_TRAPDOOR: return 6;
+			default:
+			{
+				ASSERT(!"Unhandled blocktype in trapdoor handler!");
+				return 0;
+			}
+		}
 	}
 };
 

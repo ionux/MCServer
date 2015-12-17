@@ -23,7 +23,7 @@ public:
 	}
 	
 	virtual void OnDestroyed(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, int a_BlockX, int a_BlockY, int a_BlockZ) override;
-	virtual void OnUse(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace, int a_CursorX, int a_CursorY, int a_CursorZ) override;
+	virtual bool OnUse(cChunkInterface & a_ChunkInterface, cWorldInterface & a_WorldInterface, cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace, int a_CursorX, int a_CursorY, int a_CursorZ) override;
 
 	virtual bool IsUseable(void) override
 	{
@@ -35,12 +35,6 @@ public:
 		// Reset meta to zero
 		a_Pickups.push_back(cItem(E_ITEM_BED, 1, 0));
 	}
-
-	virtual bool CanDirtGrowGrass(NIBBLETYPE a_Meta) override
-	{
-		return true;
-	}
-
 
 	// Bed specific helper functions
 	static NIBBLETYPE RotationToMetaData(double a_Rotation)
@@ -81,6 +75,12 @@ public:
 		}
 
 		a_ChunkInterface.SetBlockMeta(a_BedPosition.x, a_BedPosition.y, a_BedPosition.z, Meta);
+	}
+
+	virtual ColourID GetMapBaseColourID(NIBBLETYPE a_Meta) override
+	{
+		UNUSED(a_Meta);
+		return 28;
 	}
 } ;
 

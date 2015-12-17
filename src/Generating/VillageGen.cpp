@@ -5,11 +5,6 @@
 
 #include "Globals.h"
 #include "VillageGen.h"
-#include "Prefabs/AlchemistVillagePrefabs.h"
-#include "Prefabs/JapaneseVillagePrefabs.h"
-#include "Prefabs/PlainsVillagePrefabs.h"
-#include "Prefabs/SandVillagePrefabs.h"
-#include "Prefabs/SandFlatRoofVillagePrefabs.h"
 #include "PieceGenerator.h"
 
 
@@ -19,8 +14,8 @@
 /*
 How village generating works:
 By descending from a cGridStructGen, a semi-random (jitter) grid is generated. A village may be generated for each
-of the grid's cells. Each cell checks the biomes in an entire chunk around it, only generating a village if all
-biomes are village-friendly. If yes, the entire village structure is built for that cell. If not, the cell
+of the grid's cells. Each cell checks the biomes in an entire chunk around its center, only generating a village if
+all biomes are village-friendly. If yes, the entire village structure is built for that cell. If not, the cell
 is left village-less.
 
 A village is generated using the regular BFS piece generator. The well piece is used as the starting piece,
@@ -33,7 +28,7 @@ both types' opposites, type "-2" at the far ends and type "1" on the long edges.
 type "2" connectors along the long edges of the roads as well, so that the roads create T junctions.
 
 When the village is about to be drawn into a chunk, it queries the heights for each piece intersecting the
-chunk. The pieces are shifted so that their pivot points lie on the surface, and the roads are drawn
+chunk. The pieces are shifted so that their first connector lies on the surface, and the roads are drawn
 directly by turning the surface blocks into gravel / sandstone.
 
 The village prefabs are stored in global piecepools (one pool per village type). In order to support
@@ -51,6 +46,16 @@ public:
 		const cPrefab::sDef * a_StartingPieceDefs, size_t a_NumStartingPieceDefs
 	) :
 		super(a_PieceDefs, a_NumPieceDefs, a_StartingPieceDefs, a_NumStartingPieceDefs)
+	{
+		AddRoadPieces();
+	}
+
+	cVillagePiecePool(void)
+	{
+		AddRoadPieces();
+	}
+
+	void AddRoadPieces(void)
 	{
 		// Add the road pieces:
 		for (int len = 27; len < 60; len += 12)
@@ -115,10 +120,8 @@ public:
 		int a_MaxRoadDepth,
 		int a_MaxSize,
 		int a_Density,
-		cPiecePool & a_Prefabs,
-		cTerrainHeightGenPtr a_HeightGen,
-		BLOCKTYPE a_RoadBlock,
-		BLOCKTYPE a_WaterRoadBlock
+		cVillagePiecePool & a_Prefabs,
+		cTerrainHeightGenPtr a_HeightGen
 	) :
 		super(a_GridX, a_GridZ, a_OriginX, a_OriginZ),
 		m_Seed(a_Seed),
@@ -127,26 +130,14 @@ public:
 		m_Density(a_Density),
 		m_Borders(a_OriginX - a_MaxSize, 0, a_OriginZ - a_MaxSize, a_OriginX + a_MaxSize, cChunkDef::Height - 1, a_OriginZ + a_MaxSize),
 		m_Prefabs(a_Prefabs),
-		m_HeightGen(a_HeightGen),
-		m_RoadBlock(a_RoadBlock),
-		m_WaterRoadBlock(a_WaterRoadBlock)
+		m_HeightGen(a_HeightGen)
 	{
 		// Generate the pieces for this village; don't care about the Y coord:
 		cBFSPieceGenerator pg(*this, a_Seed);
-		pg.PlacePieces(a_OriginX, 0, a_OriginZ, a_MaxRoadDepth + 1, m_Pieces);
+		pg.PlacePieces(a_OriginX, a_OriginZ, a_MaxRoadDepth + 1, m_Pieces);
 		if (m_Pieces.empty())
 		{
 			return;
-		}
-		
-		// If the central piece should be moved to ground, move it, and
-		// check all of its dependents and move those that are strictly connector-driven based on its new Y coord:
-		if (static_cast<const cPrefab &>(m_Pieces[0]->GetPiece()).ShouldMoveToGround())
-		{
-			int OrigPosY = m_Pieces[0]->GetCoords().y;
-			PlacePieceOnGround(*m_Pieces[0]);
-			int NewPosY = m_Pieces[0]->GetCoords().y;
-			MoveAllDescendants(m_Pieces, 0, NewPosY - OrigPosY);
 		}
 	}
 	
@@ -172,19 +163,13 @@ protected:
 	cCuboid m_Borders;
 	
 	/** Prefabs to use for buildings */
-	cPiecePool & m_Prefabs;
+	cVillagePiecePool & m_Prefabs;
 	
 	/** The underlying height generator, used for placing the structures on top of the terrain. */
 	cTerrainHeightGenPtr m_HeightGen;
 	
 	/** The village pieces, placed by the generator. */
 	cPlacedPieces m_Pieces;
-	
-	/** The block to use for the roads. */
-	BLOCKTYPE m_RoadBlock;
-
-	/** The block used for the roads if the road is on water. */
-	BLOCKTYPE m_WaterRoadBlock;
 	
 	
 	// cGridStructGen::cStructure overrides:
@@ -211,8 +196,8 @@ protected:
 			Prefab.Draw(a_Chunk, *itr);
 		}  // for itr - m_PlacedPieces[]
 	}
-	
-	
+
+
 	/**  Adjusts the Y coord of the given piece so that the piece is on the ground.
 	Ground level is assumed to be represented by the first connector in the piece. */
 	void PlacePieceOnGround(cPlacedPiece & a_Piece)
@@ -241,17 +226,21 @@ protected:
 		int MaxX = std::min(RoadCoords.p2.x - a_Chunk.GetChunkX() * cChunkDef::Width, cChunkDef::Width - 1);
 		int MinZ = std::max(RoadCoords.p1.z - a_Chunk.GetChunkZ() * cChunkDef::Width, 0);
 		int MaxZ = std::min(RoadCoords.p2.z - a_Chunk.GetChunkZ() * cChunkDef::Width, cChunkDef::Width - 1);
+		auto WaterRoadBlockType = m_Prefabs.GetVillageWaterRoadBlockType();
+		auto WaterRoadBlockMeta = m_Prefabs.GetVillageWaterRoadBlockMeta();
+		auto RoadBlockType = m_Prefabs.GetVillageRoadBlockType();
+		auto RoadBlockMeta = m_Prefabs.GetVillageRoadBlockMeta();
 		for (int z = MinZ; z <= MaxZ; z++)
 		{
 			for (int x = MinX; x <= MaxX; x++)
 			{
 				if (IsBlockWater(a_Chunk.GetBlockType(x, cChunkDef::GetHeight(a_HeightMap, x, z), z)))
 				{
-					a_Chunk.SetBlockType(x, cChunkDef::GetHeight(a_HeightMap, x, z), z, m_WaterRoadBlock);
+					a_Chunk.SetBlockTypeMeta(x, cChunkDef::GetHeight(a_HeightMap, x, z), z, WaterRoadBlockType, WaterRoadBlockMeta);
 				}
 				else
 				{
-					a_Chunk.SetBlockType(x, cChunkDef::GetHeight(a_HeightMap, x, z), z, m_RoadBlock);
+					a_Chunk.SetBlockTypeMeta(x, cChunkDef::GetHeight(a_HeightMap, x, z), z, RoadBlockType, RoadBlockMeta);
 				}
 			}
 		}
@@ -336,30 +325,19 @@ protected:
 ////////////////////////////////////////////////////////////////////////////////
 // cVillageGen:
 
-static cVillagePiecePool g_SandVillage(g_SandVillagePrefabs, g_SandVillagePrefabsCount, g_SandVillageStartingPrefabs, g_SandVillageStartingPrefabsCount);
-static cVillagePiecePool g_SandFlatRoofVillage(g_SandFlatRoofVillagePrefabs, g_SandFlatRoofVillagePrefabsCount, g_SandFlatRoofVillageStartingPrefabs, g_SandFlatRoofVillageStartingPrefabsCount);
-static cVillagePiecePool g_AlchemistVillage(g_AlchemistVillagePrefabs, g_AlchemistVillagePrefabsCount, g_AlchemistVillageStartingPrefabs, g_AlchemistVillageStartingPrefabsCount);
-static cVillagePiecePool g_PlainsVillage(g_PlainsVillagePrefabs, g_PlainsVillagePrefabsCount, g_PlainsVillageStartingPrefabs, g_PlainsVillageStartingPrefabsCount);
-static cVillagePiecePool g_JapaneseVillage(g_JapaneseVillagePrefabs, g_JapaneseVillagePrefabsCount, g_JapaneseVillageStartingPrefabs, g_JapaneseVillageStartingPrefabsCount);
-
-static cVillagePiecePool * g_DesertVillagePools[] =
-{
-	&g_SandVillage,
-	&g_SandFlatRoofVillage,
-	&g_AlchemistVillage,
-} ;
-
-static cVillagePiecePool * g_PlainsVillagePools[] =
-{
-	&g_PlainsVillage,
-	&g_JapaneseVillage,
-} ;
-
-
-
-
-
-cVillageGen::cVillageGen(int a_Seed, int a_GridSize, int a_MaxOffset, int a_MaxDepth, int a_MaxSize, int a_MinDensity, int a_MaxDensity, cBiomeGenPtr a_BiomeGen, cTerrainHeightGenPtr a_HeightGen) :
+cVillageGen::cVillageGen(
+	int a_Seed,
+	int a_GridSize,
+	int a_MaxOffset,
+	int a_MaxDepth,
+	int a_MaxSize,
+	int a_MinDensity,
+	int a_MaxDensity,
+	cBiomeGenPtr a_BiomeGen,
+	cTerrainHeightGenPtr a_HeightGen,
+	int a_SeaLevel,
+	const AStringVector & a_PrefabsToLoad
+) :
 	super(a_Seed, a_GridSize, a_GridSize, a_MaxOffset, a_MaxOffset, a_MaxSize, a_MaxSize, 100),
 	m_Noise(a_Seed + 1000),
 	m_MaxDepth(a_MaxDepth),
@@ -369,6 +347,22 @@ cVillageGen::cVillageGen(int a_Seed, int a_GridSize, int a_MaxOffset, int a_MaxD
 	m_BiomeGen(a_BiomeGen),
 	m_HeightGen(a_HeightGen)
 {
+	for (const auto & toLoad: a_PrefabsToLoad)
+	{
+		auto prefabs = std::make_shared<cVillagePiecePool>();
+		auto fileName = Printf("Prefabs%sVillages%s%s.cubeset", cFile::GetPathSeparator().c_str(), cFile::GetPathSeparator().c_str(), toLoad.c_str());
+		if (prefabs->LoadFromFile(fileName, true))
+		{
+			if (NoCaseCompare(prefabs->GetIntendedUse(), "village") != 0)
+			{
+				LOGWARNING("Village generator: File %s is intended for use in \"%s\", rather than villages. Loading the file, but the generator may behave unexpectedly.",
+					fileName.c_str(), prefabs->GetIntendedUse().c_str()
+				);
+			}
+			prefabs->AssignGens(a_Seed, m_BiomeGen, m_HeightGen, a_SeaLevel);
+			m_Pools.push_back(std::move(prefabs));
+		}
+	}
 }
 
 
@@ -383,60 +377,48 @@ cGridStructGen::cStructurePtr cVillageGen::CreateStructure(int a_GridX, int a_Gr
 	cChunkDef::BiomeMap Biomes;
 	m_BiomeGen->GenBiomes(ChunkX, ChunkZ, Biomes);
 
-	// Check if all the biomes are village-friendly:
-	// If just one is not, no village is created, because it's likely that an unfriendly biome is too close
-	cVillagePiecePool * VillagePrefabs = nullptr;
-	BLOCKTYPE RoadBlock = E_BLOCK_GRAVEL;
-	BLOCKTYPE WaterRoadBlock = E_BLOCK_PLANKS;
-	int rnd = m_Noise.IntNoise2DInt(a_OriginX, a_OriginZ) / 11;
-	cVillagePiecePool * PlainsVillage = g_PlainsVillagePools[static_cast<size_t>(rnd) % ARRAYCOUNT(g_PlainsVillagePools)];
-	cVillagePiecePool * DesertVillage = g_DesertVillagePools[static_cast<size_t>(rnd) % ARRAYCOUNT(g_DesertVillagePools)];
+	// Get a list of pools that support each biome within the chunk:
+	// If just one column's biome is not allowed, the pool is not used because it's likely that an unfriendly biome is too close
+	auto availablePools = m_Pools;
 	for (size_t i = 0; i < ARRAYCOUNT(Biomes); i++)
 	{
-		switch (Biomes[i])
+		auto biome = Biomes[i];
+		availablePools.erase(std::remove_if(availablePools.begin(), availablePools.end(),
+			[biome](SharedPtr<cPrefabPiecePool> a_Pool)
+			{
+				return !a_Pool->IsBiomeAllowed(biome);
+			}),
+			availablePools.end()
+		);
+		// Bail out if no compatible pools left:
+		if (availablePools.empty())
 		{
-			case biDesert:
-			case biDesertM:
-			{
-				// These biomes allow sand villages
-				VillagePrefabs = DesertVillage;
-				// RoadBlock = E_BLOCK_SANDSTONE;
-				break;
-			}
-			case biPlains:
-			case biSavanna:
-			case biSavannaM:
-			case biSunflowerPlains:
-			{
-				// These biomes allow plains-style villages
-				VillagePrefabs = PlainsVillage;
-				break;
-			}
-			default:
-			{
-				// Village-unfriendly biome, bail out with zero structure:
-				return cStructurePtr();
-			}
-		}  // switch (Biomes[i])
-	}  // for i - Biomes[]
+			return cStructurePtr();
+		}
+	}
 
-	// Choose density for the village, random between m_MinDensity and m_MaxDensity:
-	int Density;
-	if (m_MaxDensity > m_MinDensity)
-	{
-		Density = m_MinDensity + rnd % (m_MaxDensity - m_MinDensity);
-	}
-	else
-	{
-		Density = m_MinDensity;
-	}
-	
-	// Create a village based on the chosen prefabs:
-	if (VillagePrefabs == nullptr)
+	// Pick one pool from the available pools:
+	if (availablePools.empty())
 	{
 		return cStructurePtr();
 	}
-	return cStructurePtr(new cVillage(m_Seed, a_GridX, a_GridZ, a_OriginX, a_OriginZ, m_MaxDepth, m_MaxSize, Density, *VillagePrefabs, m_HeightGen, RoadBlock, WaterRoadBlock));
+	auto rnd = m_Noise.IntNoise2DInt(a_OriginX, a_OriginZ) / 11;
+	auto pool = availablePools[static_cast<size_t>(rnd) % availablePools.size()];
+	rnd /= 137;
+
+	// Choose density for the village, random between m_MinDensity and m_MaxDensity:
+	int Density;
+	if (pool->GetMaxDensity() > pool->GetMinDensity())
+	{
+		Density = pool->GetMinDensity() + rnd % (pool->GetMaxDensity() - pool->GetMinDensity());
+	}
+	else
+	{
+		Density = pool->GetMinDensity();
+	}
+	
+	// Create a village based on the chosen prefabs:
+	return cStructurePtr(new cVillage(m_Seed, a_GridX, a_GridZ, a_OriginX, a_OriginZ, m_MaxDepth, m_MaxSize, Density, *pool.get(), m_HeightGen));
 }
 
 

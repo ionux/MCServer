@@ -41,26 +41,20 @@ public:
 	cProtocolRecognizer(cClientHandle * a_Client);
 	virtual ~cProtocolRecognizer();
 	
-	/// Translates protocol version number into protocol version text: 49 -> "1.4.4"
+	/** Translates protocol version number into protocol version text: 49 -> "1.4.4" */
 	static AString GetVersionTextFromInt(int a_ProtocolVersion);
 	
-	/// Called when client sends some data:
+	/** Called when client sends some data: */
 	virtual void DataReceived(const char * a_Data, size_t a_Size) override;
 	
-	/// Sending stuff to clients (alphabetically sorted):
+	/** Sending stuff to clients (alphabetically sorted): */
 	virtual void SendAttachEntity               (const cEntity & a_Entity, const cEntity * a_Vehicle) override;
 	virtual void SendBlockAction                (int a_BlockX, int a_BlockY, int a_BlockZ, char a_Byte1, char a_Byte2, BLOCKTYPE a_BlockType) override;
 	virtual void SendBlockBreakAnim             (UInt32 a_EntityID, int a_BlockX, int a_BlockY, int a_BlockZ, char a_Stage) override;
 	virtual void SendBlockChange                (int a_BlockX, int a_BlockY, int a_BlockZ, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta) override;
 	virtual void SendBlockChanges               (int a_ChunkX, int a_ChunkZ, const sSetBlockVector & a_Changes) override;
-	virtual void SendChat                       (const AString & a_Message) override;
-	virtual void SendChat                       (const cCompositeChat & a_Message) override;
-	virtual void SendChatAboveActionBar         (const AString & a_Message) override;
-	virtual void SendChatAboveActionBar         (const cCompositeChat & a_Message) override;
-	virtual void SendChatSystem                 (const AString & a_Message) override;
-	virtual void SendChatSystem                 (const cCompositeChat & a_Message) override;
-	virtual void SendChatType                   (const AString & a_Message, eChatType type) override;
-	virtual void SendChatType                   (const cCompositeChat & a_Message, eChatType type) override;
+	virtual void SendChat                       (const AString & a_Message, eChatType a_Type) override;
+	virtual void SendChat                       (const cCompositeChat & a_Message, eChatType a_Type, bool a_ShouldUseChatPrefixes) override;
 	virtual void SendChunkData                  (int a_ChunkX, int a_ChunkZ, cChunkDataSerializer & a_Serializer) override;
 	virtual void SendCollectEntity              (const cEntity & a_Entity, const cPlayer & a_Player) override;
 	virtual void SendDestroyEntity              (const cEntity & a_Entity) override;
@@ -81,12 +75,10 @@ public:
 	virtual void SendHealth                     (void) override;
 	virtual void SendHideTitle                  (void) override;
 	virtual void SendInventorySlot              (char a_WindowID, short a_SlotNum, const cItem & a_Item) override;
-	virtual void SendKeepAlive                  (int a_PingID) override;
+	virtual void SendKeepAlive                  (UInt32 a_PingID) override;
 	virtual void SendLogin                      (const cPlayer & a_Player, const cWorld & a_World) override;
 	virtual void SendLoginSuccess               (void) override;
-	virtual void SendMapColumn                  (int a_ID, int a_X, int a_Y, const Byte * a_Colors, unsigned int a_Length, unsigned int m_Scale) override;
-	virtual void SendMapDecorators              (int a_ID, const cMapDecoratorList & a_Decorators, unsigned int m_Scale) override;
-	virtual void SendMapInfo                    (int a_ID, unsigned int a_Scale) override;
+	virtual void SendMapData                    (const cMap & a_Map, int a_DataStartX, int a_DataStartY) override;
 	virtual void SendParticleEffect             (const AString & a_ParticleName, float a_SrcX, float a_SrcY, float a_SrcZ, float a_OffsetX, float a_OffsetY, float a_OffsetZ, float a_ParticleData, int a_ParticleAmount) override;
 	virtual void SendParticleEffect             (const AString & a_ParticleName, Vector3f a_Src, Vector3f a_Offset, float a_ParticleData, int a_ParticleAmount, std::array<int, 2> a_Data) override;
 	virtual void SendPaintingSpawn              (const cPainting & a_Painting) override;
@@ -116,7 +108,7 @@ public:
 	virtual void SendSetTitle                   (const cCompositeChat & a_Title) override;
 	virtual void SendSetRawTitle                (const AString & a_Title) override;
 	virtual void SendSoundEffect                (const AString & a_SoundName, double a_X, double a_Y, double a_Z, float a_Volume, float a_Pitch) override;
-	virtual void SendSoundParticleEffect        (int a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data) override;
+	virtual void SendSoundParticleEffect        (const EffectID a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data) override;
 	virtual void SendSpawnFallingBlock          (const cFallingBlock & a_FallingBlock) override;
 	virtual void SendSpawnMob                   (const cMonster & a_Mob) override;
 	virtual void SendSpawnObject                (const cEntity & a_Entity, char a_ObjectType, int a_ObjectData, Byte a_Yaw, Byte a_Pitch) override;
@@ -142,15 +134,19 @@ public:
 	virtual void SendData(const char * a_Data, size_t a_Size) override;
 
 protected:
-	cProtocol * m_Protocol;  ///< The recognized protocol
-	cByteBuffer m_Buffer;    ///< Buffer for the incoming data until we recognize the protocol
+	/** The recognized protocol */
+	cProtocol * m_Protocol;
+
+	/** Buffer for the incoming data until we recognize the protocol */
+	cByteBuffer m_Buffer;
 	
-	/// Tries to recognize protocol based on m_Buffer contents; returns true if recognized
+
+	/** Tries to recognize protocol based on m_Buffer contents; returns true if recognized */
 	bool TryRecognizeProtocol(void);
 	
 	/** Tries to recognize a protocol in the lengthed family (1.7+), based on m_Buffer; returns true if recognized.
 	The packet length and type have already been read, type is 0
-	The number of bytes remaining in the packet is passed as a_PacketLengthRemaining. **/
+	The number of bytes remaining in the packet is passed as a_PacketLengthRemaining. */
 	bool TryRecognizeLengthedProtocol(UInt32 a_PacketLengthRemaining);
 
 	/** Sends a single packet contained within the cPacketizer class.

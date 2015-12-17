@@ -37,7 +37,6 @@
 #include "ItemMilk.h"
 #include "ItemMinecart.h"
 #include "ItemMobHead.h"
-#include "ItemMushroomSoup.h"
 #include "ItemNetherWart.h"
 #include "ItemPainting.h"
 #include "ItemPickaxe.h"
@@ -138,7 +137,6 @@ cItemHandler * cItemHandler::CreateItemHandler(int a_ItemType)
 		case E_ITEM_GOLDEN_APPLE:        return new cItemGoldenAppleHandler();
 		case E_ITEM_MAP:                 return new cItemMapHandler();
 		case E_ITEM_MILK:                return new cItemMilkHandler();
-		case E_ITEM_MUSHROOM_SOUP:       return new cItemMushroomSoupHandler(a_ItemType);
 		case E_ITEM_ITEM_FRAME:          return new cItemItemFrameHandler(a_ItemType);
 		case E_ITEM_NETHER_WART:         return new cItemNetherWartHandler(a_ItemType);
 		case E_ITEM_PAINTING:            return new cItemPaintingHandler(a_ItemType);
@@ -237,6 +235,7 @@ cItemHandler * cItemHandler::CreateItemHandler(int a_ItemType)
 		case E_ITEM_COOKIE:
 		case E_ITEM_GOLDEN_CARROT:
 		case E_ITEM_MELON_SLICE:
+		case E_ITEM_MUSHROOM_SOUP:
 		case E_ITEM_POISONOUS_POTATO:
 		case E_ITEM_PUMPKIN_PIE:
 		case E_ITEM_RABBIT_STEW:
@@ -367,43 +366,78 @@ bool cItemHandler::OnPlayerPlace(
 			return false;
 		}
 	}
-	
-	BLOCKTYPE BlockType;
-	NIBBLETYPE BlockMeta;
-	if (!GetPlacementBlockTypeMeta(&a_World, &a_Player, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace, a_CursorX, a_CursorY, a_CursorZ, BlockType, BlockMeta))
+
+	// Get all the blocks to place:
+	sSetBlockVector blocks;
+	if (!GetBlocksToPlace(a_World, a_Player, a_EquippedItem, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace, a_CursorX, a_CursorY, a_CursorZ, blocks))
 	{
 		// Handler refused the placement, send that information back to the client:
+		for (const auto & blk: blocks)
+		{
+			a_World.SendBlockTo(blk.GetX(), blk.GetY(), blk.GetZ(), &a_Player);
+		}
 		a_World.SendBlockTo(a_BlockX, a_BlockY, a_BlockZ, &a_Player);
 		a_Player.GetInventory().SendEquippedSlot();
 		return false;
 	}
 	
-	if (!a_Player.PlaceBlock(a_BlockX, a_BlockY, a_BlockZ, BlockType, BlockMeta))
+	// Try to place the blocks:
+	if (!a_Player.PlaceBlocks(blocks))
 	{
-		// The placement failed, the block has already been re-sent, re-send inventory:
+		// The placement failed, the blocks have already been re-sent, re-send inventory:
 		a_Player.GetInventory().SendEquippedSlot();
 		return false;
 	}
 
-	AString PlaceSound = cBlockInfo::GetPlaceSound(BlockType);
-	float Volume = 1.0f, Pitch = 0.8f;
-	if (PlaceSound == "dig.metal")
+	// Play the placement sound for the main block:
+	for (const auto & blk: blocks)
 	{
-		Pitch = 1.2f;
-		PlaceSound = "dig.stone";
-	}
-	else if (PlaceSound == "random.anvil_land")
-	{
-		Volume = 0.65f;
-	}
-
-	a_World.BroadcastSoundEffect(PlaceSound, a_BlockX + 0.5, a_BlockY + 0.5, a_BlockZ + 0.5, Volume, Pitch);
+		// Find the main block by comparing the coords:
+		if ((blk.GetX() != a_BlockX) || (blk.GetY() != a_BlockY) || (blk.GetZ() != a_BlockZ))
+		{
+			continue;
+		}
+		AString PlaceSound = cBlockInfo::GetPlaceSound(blk.m_BlockType);
+		float Volume = 1.0f, Pitch = 0.8f;
+		if (PlaceSound == "dig.metal")
+		{
+			Pitch = 1.2f;
+			PlaceSound = "dig.stone";
+		}
+		else if (PlaceSound == "random.anvil_land")
+		{
+			Volume = 0.65f;
+		}
+		a_World.BroadcastSoundEffect(PlaceSound, a_BlockX + 0.5, a_BlockY + 0.5, a_BlockZ + 0.5, Volume, Pitch);
+		break;
+	}  // for blk - blocks[]
 
 	// Remove the "placed" item:
 	if (a_Player.IsGameModeSurvival())
 	{
 		a_Player.GetInventory().RemoveOneEquippedItem();
 	}
+	return true;
+}
+
+
+
+
+
+bool cItemHandler::GetBlocksToPlace(
+	cWorld & a_World, cPlayer & a_Player, const cItem & a_EquippedItem,
+	int a_BlockX, int a_BlockY, int a_BlockZ, eBlockFace a_BlockFace,
+	int a_CursorX, int a_CursorY, int a_CursorZ,
+	sSetBlockVector & a_BlocksToSet
+)
+{
+	BLOCKTYPE BlockType;
+	NIBBLETYPE BlockMeta;
+	if (!GetPlacementBlockTypeMeta(&a_World, &a_Player, a_BlockX, a_BlockY, a_BlockZ, a_BlockFace, a_CursorX, a_CursorY, a_CursorZ, BlockType, BlockMeta))
+	{
+		return false;
+	}
+	a_BlocksToSet.emplace_back(a_BlockX, a_BlockY, a_BlockZ, BlockType, BlockMeta);
 	return true;
 }
 
@@ -496,12 +530,15 @@ void cItemHandler::OnFoodEaten(cWorld * a_World, cPlayer * a_Player, cItem * a_I
 
 short cItemHandler::GetDurabilityLossByAction(eDurabilityLostAction a_Action)
 {
-	switch ((int)a_Action)
+	switch (a_Action)
 	{
 		case dlaAttackEntity: return 2;
 		case dlaBreakBlock:   return 1;
 	}
+	
+	#ifndef __clang__
 	return 0;
+	#endif
 }
 
 
@@ -552,6 +589,7 @@ char cItemHandler::GetMaxStackSize(void)
 		case E_ITEM_DYE:                  return 64;
 		case E_ITEM_EGG:                  return 16;
 		case E_ITEM_EMERALD:              return 64;
+		case E_ITEM_EMPTY_MAP:            return 64;
 		case E_ITEM_ENDER_PEARL:          return 16;
 		case E_ITEM_EYE_OF_ENDER:         return 64;
 		case E_ITEM_FEATHER:              return 64;
@@ -697,7 +735,7 @@ bool cItemHandler::CanHarvestBlock(BLOCKTYPE a_BlockType)
 		case E_BLOCK_DEAD_BUSH:
 		case E_BLOCK_DIAMOND_BLOCK:
 		case E_BLOCK_DIAMOND_ORE:
-		case E_BLOCK_DOUBLE_NEW_STONE_SLAB:
+		case E_BLOCK_DOUBLE_RED_SANDSTONE_SLAB:
 		case E_BLOCK_DOUBLE_STONE_SLAB:
 		case E_BLOCK_EMERALD_ORE:
 		case E_BLOCK_ENCHANTMENT_TABLE:
@@ -717,7 +755,7 @@ bool cItemHandler::CanHarvestBlock(BLOCKTYPE a_BlockType)
 		case E_BLOCK_NETHER_BRICK_STAIRS:
 		case E_BLOCK_NETHER_BRICK_FENCE:
 		case E_BLOCK_NETHERRACK:
-		case E_BLOCK_NEW_STONE_SLAB:
+		case E_BLOCK_RED_SANDSTONE_SLAB:
 		case E_BLOCK_OBSIDIAN:
 		case E_BLOCK_PACKED_ICE:
 		case E_BLOCK_PRISMARINE_BLOCK:

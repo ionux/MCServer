@@ -5,7 +5,8 @@ project (MCServer)
 include_directories ("${PROJECT_SOURCE_DIR}/../")
 
 SET (SRCS
-	ItemHandler.cpp)
+	ItemHandler.cpp
+)
 
 SET (HDRS
 	ItemArmor.h
@@ -26,6 +27,7 @@ SET (HDRS
 	ItemFishingRod.h
 	ItemFlowerPot.h
 	ItemFood.h
+	ItemGoldenApple.h
 	ItemHandler.h
 	ItemHoe.h
 	ItemItemFrame.h
@@ -47,8 +49,8 @@ SET (HDRS
 	ItemSeeds.h
 	ItemShears.h
 	ItemShovel.h
-	ItemSlab.h
 	ItemSign.h
+	ItemSlab.h
 	ItemSpawnEgg.h
 	ItemString.h
 	ItemSugarcane.h
@@ -57,7 +59,7 @@ SET (HDRS
 )
 
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-	set_source_files_properties(ItemHandler.cpp PROPERTIES COMPILE_FLAGS "-Wno-error=sign-conversion -Wno-error=conversion -Wno-error=old-style-cast -Wno-error=switch-enum")
+	set_source_files_properties(ItemHandler.cpp PROPERTIES COMPILE_FLAGS "-Wno-error=sign-conversion -Wno-error=conversion -Wno-error=switch-enum")
 endif()
 
 if(NOT MSVC)

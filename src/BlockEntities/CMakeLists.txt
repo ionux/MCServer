@@ -7,6 +7,7 @@ include_directories ("${PROJECT_SOURCE_DIR}/../")
 SET (SRCS
 	BeaconEntity.cpp
 	BlockEntity.cpp
+	BrewingstandEntity.cpp
 	ChestEntity.cpp
 	CommandBlockEntity.cpp
 	DispenserEntity.cpp
@@ -20,12 +21,14 @@ SET (SRCS
 	MobHeadEntity.cpp
 	MobSpawnerEntity.cpp
 	NoteEntity.cpp
-	SignEntity.cpp)
+	SignEntity.cpp
+)
 
 SET (HDRS
 	BeaconEntity.h
 	BlockEntity.h
 	BlockEntityWithItems.h
+	BrewingstandEntity.h
 	ChestEntity.h
 	CommandBlockEntity.h
 	DispenserEntity.h
@@ -39,7 +42,9 @@ SET (HDRS
 	MobHeadEntity.h
 	MobSpawnerEntity.h
 	NoteEntity.h
-	SignEntity.h)
+	RedstonePoweredEntity.h
+	SignEntity.h
+)
 
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
 	set_source_files_properties(BeaconEntity.cpp PROPERTIES COMPILE_FLAGS "-Wno-error=conversion -Wno-error=switch-enum")

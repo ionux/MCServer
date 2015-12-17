@@ -17,9 +17,6 @@
 
 
 
-
-
-
 bool compareHeuristics::operator()(cPathCell * & a_Cell1, cPathCell * & a_Cell2)
 {
 	return a_Cell1->m_F > a_Cell2->m_F;
@@ -36,60 +33,23 @@ cPath::cPath(
 	double a_BoundingBoxWidth, double a_BoundingBoxHeight,
 	int a_MaxUp, int a_MaxDown
 ) :
-
+	m_StepsLeft(a_MaxSteps),
+	m_IsValid(true),
 	m_CurrentPoint(0),  // GetNextPoint increments this to 1, but that's fine, since the first cell is always a_StartingPoint
 	m_Chunk(&a_Chunk),
 	m_BadChunkFound(false)
 {
-	// TODO: if src not walkable OR dest not walkable, then abort.
-	// Borrow a new "isWalkable" from ProcessIfWalkable, make ProcessIfWalkable also call isWalkable
-
-	a_BoundingBoxWidth = 1;  // Until we improve physics, if ever.
-
-	m_BoundingBoxWidth = CeilC(a_BoundingBoxWidth);
-	m_BoundingBoxHeight = CeilC(a_BoundingBoxHeight);
-	m_HalfWidth = a_BoundingBoxWidth / 2;
-
-	int HalfWidthInt = FloorC(a_BoundingBoxWidth / 2);
-	m_Source.x = FloorC(a_StartingPoint.x - HalfWidthInt);
-	m_Source.y = FloorC(a_StartingPoint.y);
-	m_Source.z = FloorC(a_StartingPoint.z - HalfWidthInt);
-
-	m_Destination.x = FloorC(a_EndingPoint.x - HalfWidthInt);
-	m_Destination.y = FloorC(a_EndingPoint.y);
-	m_Destination.z = FloorC(a_EndingPoint.z - HalfWidthInt);
-
-	if (GetCell(m_Source)->m_IsSolid || GetCell(m_Destination)->m_IsSolid)
-	{
-		m_Status = ePathFinderStatus::PATH_NOT_FOUND;
-		return;
-	}
-
-	m_NearestPointToTarget = GetCell(m_Source);
-	m_Status = ePathFinderStatus::CALCULATING;
-	m_StepsLeft = a_MaxSteps;
-
-	ProcessCell(GetCell(a_StartingPoint), nullptr, 0);
-	m_Chunk = nullptr;
+	ResetImpl(a_StartingPoint, a_EndingPoint, a_BoundingBoxWidth, a_BoundingBoxHeight);
 }
 
-
-
-
-
-cPath::~cPath()
+cPath::cPath() : m_IsValid(false)
 {
-	if (m_Status == ePathFinderStatus::CALCULATING)
-	{
-		FinishCalculation();
-	}
+
 }
 
 
 
-
-
-ePathFinderStatus cPath::Step(cChunk & a_Chunk)
+ePathFinderStatus cPath::CalculationStep(cChunk & a_Chunk)
 {
 	m_Chunk = &a_Chunk;
 	if (m_Status != ePathFinderStatus::CALCULATING)
@@ -113,7 +73,7 @@ ePathFinderStatus cPath::Step(cChunk & a_Chunk)
 		int i;
 		for (i = 0; i < CALCULATIONS_PER_STEP; ++i)
 		{
-			if (Step_Internal())  // Step_Internal returns true when no more calculation is needed.
+			if (StepOnce())  // StepOnce returns true when no more calculation is needed.
 			{
 				break;  // if we're here, m_Status must have changed either to PATH_FOUND or PATH_NOT_FOUND.
 			}
@@ -143,6 +103,10 @@ bool cPath::IsSolid(const Vector3i & a_Location)
 {
 	ASSERT(m_Chunk != nullptr);
 
+	if (!cChunkDef::IsValidHeight(a_Location.y))
+	{
+		return false;
+	}
 	auto Chunk = m_Chunk->GetNeighborChunk(a_Location.x, a_Location.z);
 	if ((Chunk == nullptr) || !Chunk->IsValid())
 	{
@@ -159,8 +123,9 @@ bool cPath::IsSolid(const Vector3i & a_Location)
 	m_Chunk->GetBlockTypeMeta(RelX, a_Location.y, RelZ, BlockType, BlockMeta);
 	if (
 			(BlockType == E_BLOCK_FENCE) ||
-			(BlockType == E_BLOCK_FENCE_GATE) ||
+			(BlockType == E_BLOCK_OAK_FENCE_GATE) ||
 			(BlockType == E_BLOCK_NETHER_BRICK_FENCE) ||
+			(BlockType == E_BLOCK_COBBLESTONE_WALL) ||
 			((BlockType >= E_BLOCK_SPRUCE_FENCE_GATE) && (BlockType <= E_BLOCK_ACACIA_FENCE))
 	)
 	{
@@ -179,7 +144,7 @@ bool cPath::IsSolid(const Vector3i & a_Location)
 
 
 
-bool cPath::Step_Internal()
+bool cPath::StepOnce()
 {
 	cPathCell * CurrentCell = OpenListPop();
 
@@ -299,11 +264,12 @@ void cPath::AttemptToFindAlternative()
 void cPath::BuildPath()
 {
 	cPathCell * CurrentCell = GetCell(m_Destination);
-	do
+	while (CurrentCell->m_Parent != nullptr)
 	{
-		m_PathPoints.push_back(CurrentCell->m_Location);  // Populate the cPath with points.
+		m_PathPoints.push_back(CurrentCell->m_Location);  // Populate the cPath with points. All midpoints are added. Destination is added. Source is excluded.
 		CurrentCell = CurrentCell->m_Parent;
-	} while (CurrentCell != nullptr);
+	}
+
 }
 
 
@@ -387,7 +353,8 @@ void cPath::ProcessIfWalkable(const Vector3i & a_Location, cPathCell * a_Parent,
 		}
 	}
 
-	/*y =-1;
+	/*
+	y = -1;
 	for (x = 0; x < m_BoundingBoxWidth; ++x)
 	{
 		for (z = 0; z < m_BoundingBoxWidth; ++z)
@@ -398,7 +365,8 @@ void cPath::ProcessIfWalkable(const Vector3i & a_Location, cPathCell * a_Parent,
 			}
 		}
 	}
-	ProcessCell(cell, a_Parent, a_Cost);*/
+	ProcessCell(cell, a_Parent, a_Cost);
+	*/
 
 	// Make sure there's at least 1 piece of solid below us.
 
@@ -502,3 +470,64 @@ cPathCell * cPath::GetCell(const Vector3i & a_Location)
 		return &m_Map[a_Location];
 	}
 }
+
+
+
+
+
+void cPath::ResetImpl(
+	const Vector3d & a_StartingPoint, const Vector3d & a_EndingPoint,
+	double a_BoundingBoxWidth, double a_BoundingBoxHeight
+)
+{
+	// TODO: if src not walkable OR dest not walkable, then abort.
+	// Borrow a new "isWalkable" from ProcessIfWalkable, make ProcessIfWalkable also call isWalkable
+
+	a_BoundingBoxWidth = 1;  // Until we improve physics, if ever.
+
+	m_BoundingBoxWidth = CeilC(a_BoundingBoxWidth);
+	m_BoundingBoxHeight = CeilC(a_BoundingBoxHeight);
+	m_HalfWidth = a_BoundingBoxWidth / 2;
+
+	int HalfWidthInt = FloorC(a_BoundingBoxWidth / 2);
+	m_Source.x = FloorC(a_StartingPoint.x - HalfWidthInt);
+	m_Source.y = FloorC(a_StartingPoint.y);
+	m_Source.z = FloorC(a_StartingPoint.z - HalfWidthInt);
+
+	m_Destination.x = FloorC(a_EndingPoint.x - HalfWidthInt);
+	m_Destination.y = FloorC(a_EndingPoint.y);
+	m_Destination.z = FloorC(a_EndingPoint.z - HalfWidthInt);
+
+	if (GetCell(m_Source)->m_IsSolid || GetCell(m_Destination)->m_IsSolid)
+	{
+		m_Status = ePathFinderStatus::PATH_NOT_FOUND;
+		return;
+	}
+
+	m_NearestPointToTarget = GetCell(m_Source);
+	m_Status = ePathFinderStatus::CALCULATING;
+
+	ProcessCell(GetCell(m_Source), nullptr, 0);
+}
+
+
+
+
+
+void cPath::Reset(
+	cChunk & a_Chunk,
+	const Vector3d & a_StartingPoint, const Vector3d & a_EndingPoint, int a_MaxSteps,
+	double a_BoundingBoxWidth, double a_BoundingBoxHeight,
+	int a_MaxUp, int a_MaxDown
+)
+{
+	m_Map.clear();
+	m_OpenList = decltype(m_OpenList){};
+	m_StepsLeft = a_MaxSteps;
+	m_IsValid = true;
+	m_CurrentPoint = 0;  // GetNextPoint increments this to 1, but that's fine, since the first cell is always a_StartingPoint
+	m_Chunk = &a_Chunk;
+	m_BadChunkFound = false;
+	ResetImpl(a_StartingPoint, a_EndingPoint, a_BoundingBoxWidth, a_BoundingBoxHeight);
+}
+

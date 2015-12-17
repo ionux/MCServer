@@ -13,6 +13,7 @@
 #include "Player.h"
 #include "Items/ItemHandler.h"
 #include "../FastRandom.h"
+#include "../NetherPortalScanner.h"
 
 
 
@@ -37,11 +38,12 @@ cEntity::cEntity(eEntityType a_EntityType, double a_X, double a_Y, double a_Z, d
 	m_bOnGround(false),
 	m_Gravity(-9.81f),
 	m_AirDrag(0.02f),
-	m_LastPos(a_X, a_Y, a_Z),
+	m_LastPosition(a_X, a_Y, a_Z),
 	m_IsInitialized(false),
 	m_WorldTravellingFrom(nullptr),
 	m_EntityType(a_EntityType),
 	m_World(nullptr),
+	m_IsWorldChangeScheduled(false),
 	m_IsFireproof(false),
 	m_TicksSinceLastBurnDamage(0),
 	m_TicksSinceLastLavaDamage(0),
@@ -55,7 +57,8 @@ cEntity::cEntity(eEntityType a_EntityType, double a_X, double a_Y, double a_Z, d
 	m_TicksAlive(0),
 	m_HeadYaw(0.0),
 	m_Rot(0.0, 0.0, 0.0),
-	m_Pos(a_X, a_Y, a_Z),
+	m_Position(a_X, a_Y, a_Z),
+	m_LastSentPosition(a_X, a_Y, a_Z),
 	m_WaterSpeed(0, 0, 0),
 	m_Mass (0.001),  // Default 1g
 	m_Width(a_Width),
@@ -311,7 +314,7 @@ bool cEntity::DoTakeDamage(TakeDamageInfo & a_TDI)
 
 	if ((a_TDI.Attacker != nullptr) && (a_TDI.Attacker->IsPlayer()))
 	{
-		cPlayer * Player = (cPlayer *)a_TDI.Attacker;
+		cPlayer * Player = reinterpret_cast<cPlayer *>(a_TDI.Attacker);
 
 		Player->GetEquippedItem().GetHandler()->OnEntityAttack(Player, this);
 
@@ -319,19 +322,19 @@ bool cEntity::DoTakeDamage(TakeDamageInfo & a_TDI)
 		// TODO: Better damage increase, and check for enchantments (and use magic critical instead of plain)
 		const cEnchantments & Enchantments = Player->GetEquippedItem().m_Enchantments;
 		
-		int SharpnessLevel = Enchantments.GetLevel(cEnchantments::enchSharpness);
-		int SmiteLevel = Enchantments.GetLevel(cEnchantments::enchSmite);
-		int BaneOfArthropodsLevel = Enchantments.GetLevel(cEnchantments::enchBaneOfArthropods);
+		int SharpnessLevel = static_cast<int>(Enchantments.GetLevel(cEnchantments::enchSharpness));
+		int SmiteLevel = static_cast<int>(Enchantments.GetLevel(cEnchantments::enchSmite));
+		int BaneOfArthropodsLevel = static_cast<int>(Enchantments.GetLevel(cEnchantments::enchBaneOfArthropods));
 
 		if (SharpnessLevel > 0)
 		{
-			a_TDI.FinalDamage += (int)ceil(1.25 * SharpnessLevel);
+			a_TDI.FinalDamage += static_cast<int>(ceil(1.25 * SharpnessLevel));
 		}
 		else if (SmiteLevel > 0)
 		{
 			if (IsMob())
 			{
-				cMonster * Monster = (cMonster *)this;
+				cMonster * Monster = reinterpret_cast<cMonster *>(this);
 				switch (Monster->GetMobType())
 				{
 					case mtSkeleton:
@@ -339,7 +342,7 @@ bool cEntity::DoTakeDamage(TakeDamageInfo & a_TDI)
 					case mtWither:
 					case mtZombiePigman:
 					{
-						a_TDI.FinalDamage += (int)ceil(2.5 * SmiteLevel);
+						a_TDI.FinalDamage += static_cast<int>(ceil(2.5 * SmiteLevel));
 						break;
 					}
 					default: break;
@@ -350,14 +353,14 @@ bool cEntity::DoTakeDamage(TakeDamageInfo & a_TDI)
 		{
 			if (IsMob())
 			{
-				cMonster * Monster = (cMonster *)this;
+				cMonster * Monster = reinterpret_cast<cMonster *>(this);
 				switch (Monster->GetMobType())
 				{
 					case mtSpider:
 					case mtCaveSpider:
 					case mtSilverfish:
 					{
-						a_TDI.RawDamage += (int)ceil(2.5 * BaneOfArthropodsLevel);
+						a_TDI.RawDamage += static_cast<int>(ceil(2.5 * BaneOfArthropodsLevel));
 						// TODO: Add slowness effect
 						
 						break;
@@ -367,7 +370,7 @@ bool cEntity::DoTakeDamage(TakeDamageInfo & a_TDI)
 			}
 		}
 
-		int FireAspectLevel = Enchantments.GetLevel(cEnchantments::enchFireAspect);
+		int FireAspectLevel = static_cast<int>(Enchantments.GetLevel(cEnchantments::enchFireAspect));
 		if (FireAspectLevel > 0)
 		{
 			int BurnTicks = 3;
@@ -382,7 +385,7 @@ bool cEntity::DoTakeDamage(TakeDamageInfo & a_TDI)
 			}
 			else if (IsMob() && !IsSubmerged() && !IsSwimming())
 			{
-				cMonster * Monster = (cMonster *)this;
+				cMonster * Monster = reinterpret_cast<cMonster *>(this);
 				switch (Monster->GetMobType())
 				{
 					case mtGhast:
@@ -406,7 +409,7 @@ bool cEntity::DoTakeDamage(TakeDamageInfo & a_TDI)
 		
 		if (ThornsLevel > 0)
 		{
-			int Chance = ThornsLevel * 15;
+			int Chance = static_cast<int>(ThornsLevel * 15);
 
 			cFastRandom Random;
 			int RandomValue = Random.GenerateRandomInteger(0, 100);
@@ -426,7 +429,7 @@ bool cEntity::DoTakeDamage(TakeDamageInfo & a_TDI)
 			}
 		}
 
-		Player->GetStatManager().AddValue(statDamageDealt, (StatValue)floor(a_TDI.FinalDamage * 10 + 0.5));
+		Player->GetStatManager().AddValue(statDamageDealt, static_cast<StatValue>(floor(a_TDI.FinalDamage * 10 + 0.5)));
 	}
 
 	if (IsPlayer())
@@ -442,31 +445,31 @@ bool cEntity::DoTakeDamage(TakeDamageInfo & a_TDI)
 		for (size_t i = 0; i < ARRAYCOUNT(ArmorItems); i++)
 		{
 			const cItem & Item = ArmorItems[i];
-			int Level = Item.m_Enchantments.GetLevel(cEnchantments::enchProtection);
+			int Level = static_cast<int>(Item.m_Enchantments.GetLevel(cEnchantments::enchProtection));
 			if (Level > 0)
 			{
 				EPFProtection += (6 + Level * Level) * 0.75 / 3;
 			}
 
-			Level = Item.m_Enchantments.GetLevel(cEnchantments::enchFireProtection);
+			Level = static_cast<int>(Item.m_Enchantments.GetLevel(cEnchantments::enchFireProtection));
 			if (Level > 0)
 			{
 				EPFFireProtection += (6 + Level * Level) * 1.25 / 3;
 			}
 
-			Level = Item.m_Enchantments.GetLevel(cEnchantments::enchFeatherFalling);
+			Level = static_cast<int>(Item.m_Enchantments.GetLevel(cEnchantments::enchFeatherFalling));
 			if (Level > 0)
 			{
 				EPFFeatherFalling += (6 + Level * Level) * 2.5 / 3;
 			}
 
-			Level = Item.m_Enchantments.GetLevel(cEnchantments::enchBlastProtection);
+			Level = static_cast<int>(Item.m_Enchantments.GetLevel(cEnchantments::enchBlastProtection));
 			if (Level > 0)
 			{
 				EPFBlastProtection += (6 + Level * Level) * 1.5 / 3;
 			}
 
-			Level = Item.m_Enchantments.GetLevel(cEnchantments::enchProjectileProtection);
+			Level = static_cast<int>(Item.m_Enchantments.GetLevel(cEnchantments::enchProjectileProtection));
 			if (Level > 0)
 			{
 				EPFProjectileProtection += (6 + Level * Level) * 1.5 / 3;
@@ -507,27 +510,27 @@ bool cEntity::DoTakeDamage(TakeDamageInfo & a_TDI)
 
 		if ((a_TDI.DamageType != dtInVoid) && (a_TDI.DamageType != dtAdmin))
 		{
-			RemovedDamage += (int)ceil(EPFProtection * 0.04 * a_TDI.FinalDamage);
+			RemovedDamage += CeilC(EPFProtection * 0.04 * a_TDI.FinalDamage);
 		}
 
 		if ((a_TDI.DamageType == dtFalling) || (a_TDI.DamageType == dtFall) || (a_TDI.DamageType == dtEnderPearl))
 		{
-			RemovedDamage += (int)ceil(EPFFeatherFalling * 0.04 * a_TDI.FinalDamage);
+			RemovedDamage += CeilC(EPFFeatherFalling * 0.04 * a_TDI.FinalDamage);
 		}
 		
 		if (a_TDI.DamageType == dtBurning)
 		{
-			RemovedDamage += (int)ceil(EPFFireProtection * 0.04 * a_TDI.FinalDamage);
+			RemovedDamage += CeilC(EPFFireProtection * 0.04 * a_TDI.FinalDamage);
 		}
 
 		if (a_TDI.DamageType == dtExplosion)
 		{
-			RemovedDamage += (int)ceil(EPFBlastProtection * 0.04 * a_TDI.FinalDamage);
+			RemovedDamage += CeilC(EPFBlastProtection * 0.04 * a_TDI.FinalDamage);
 		}
 
 		if (a_TDI.DamageType == dtProjectile)
 		{
-			RemovedDamage += (int)ceil(EPFBlastProtection * 0.04 * a_TDI.FinalDamage);
+			RemovedDamage += CeilC(EPFBlastProtection * 0.04 * a_TDI.FinalDamage);
 		}
 
 		if (a_TDI.FinalDamage < RemovedDamage)
@@ -538,7 +541,7 @@ bool cEntity::DoTakeDamage(TakeDamageInfo & a_TDI)
 		a_TDI.FinalDamage -= RemovedDamage;
 	}
 
-	m_Health -= (short)a_TDI.FinalDamage;
+	m_Health -= static_cast<short>(a_TDI.FinalDamage);
 	
 	// TODO: Apply damage to armor
 	
@@ -547,11 +550,11 @@ bool cEntity::DoTakeDamage(TakeDamageInfo & a_TDI)
 	// Add knockback:
 	if ((IsMob() || IsPlayer()) && (a_TDI.Attacker != nullptr))
 	{
-		int KnockbackLevel = a_TDI.Attacker->GetEquippedWeapon().m_Enchantments.GetLevel(cEnchantments::enchKnockback);  // More common enchantment
+		int KnockbackLevel = static_cast<int>(a_TDI.Attacker->GetEquippedWeapon().m_Enchantments.GetLevel(cEnchantments::enchKnockback));  // More common enchantment
 		if (KnockbackLevel < 1)
 		{
 			// We support punch on swords and vice versa! :)
-			KnockbackLevel = a_TDI.Attacker->GetEquippedWeapon().m_Enchantments.GetLevel(cEnchantments::enchPunch);
+			KnockbackLevel = static_cast<int>(a_TDI.Attacker->GetEquippedWeapon().m_Enchantments.GetLevel(cEnchantments::enchPunch));
 		}
 
 		Vector3d AdditionalSpeed(0, 0, 0);
@@ -742,6 +745,13 @@ void cEntity::KilledBy(TakeDamageInfo & a_TDI)
 		return;
 	}
 
+	// If the victim is a player the hook is handled by the cPlayer class
+	if (!IsPlayer())
+	{
+		AString emptystring = AString("");
+		cRoot::Get()->GetPluginManager()->CallHookKilled(*this, a_TDI, emptystring);
+	}
+
 	// Drop loot:
 	cItems Drops;
 	GetDrops(Drops, a_TDI.Attacker);
@@ -784,17 +794,7 @@ void cEntity::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 
 	if (m_AttachedTo != nullptr)
 	{
-		Vector3d DeltaPos = m_Pos - m_AttachedTo->GetPosition();
-		if (DeltaPos.Length() > 0.5)
-		{
-			SetPosition(m_AttachedTo->GetPosition());
-
-			if (IsPlayer())
-			{
-				cPlayer * Player = (cPlayer *)this;
-				Player->UpdateMovementStats(DeltaPos);
-			}
-		}
+		SetPosition(m_AttachedTo->GetPosition());
 	}
 	else
 	{
@@ -1004,7 +1004,7 @@ void cEntity::HandlePhysics(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 	{
 		cTracer Tracer(GetWorld());
 		// Distance traced is an integer, so we round up from the distance we should go (Speed * Delta), else we will encounter collision detection failurse
-		int DistanceToTrace = (int)(ceil((NextSpeed * DtSec.count()).SqrLength()) * 2);
+		int DistanceToTrace = CeilC((NextSpeed * DtSec.count()).SqrLength()) * 2;
 		bool HasHit = Tracer.Trace(NextPos, NextSpeed, DistanceToTrace);
 
 		if (HasHit)
@@ -1029,16 +1029,17 @@ void cEntity::HandlePhysics(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 					NextSpeed.z = 0.0f;
 				}
 
-				if (Tracer.HitNormal.y == 1.0f)  // Hit BLOCK_FACE_YP, we are on the ground
-				{
-					m_bOnGround = true;
-				}
-
 				// Now, set our position to the hit block (i.e. move part way along our intended trajectory)
 				NextPos.Set(Tracer.RealHit.x, Tracer.RealHit.y, Tracer.RealHit.z);
 				NextPos.x += Tracer.HitNormal.x * 0.1;
 				NextPos.y += Tracer.HitNormal.y * 0.05;
 				NextPos.z += Tracer.HitNormal.z * 0.1;
+
+				if (Tracer.HitNormal.y == 1.0f)  // Hit BLOCK_FACE_YP, we are on the ground
+				{
+					m_bOnGround = true;
+					NextPos.y = FloorC(NextPos.y);  // we clamp the height to 0 cos otherwise we'll constantly be slightly above the block
+				}
 			}
 			else
 			{
@@ -1104,7 +1105,7 @@ void cEntity::TickBurning(cChunk & a_Chunk)
 		m_TicksSinceLastBurnDamage++;
 		if (m_TicksSinceLastBurnDamage >= BURN_TICKS_PER_DAMAGE)
 		{
-			if (!m_IsFireproof)
+			if (!IsFireproof())
 			{
 				TakeDamage(dtOnFire, nullptr, BURN_DAMAGE, 0);
 			}
@@ -1114,12 +1115,12 @@ void cEntity::TickBurning(cChunk & a_Chunk)
 	}
 	
 	// Update the burning times, based on surroundings:
-	int MinRelX = (int)floor(GetPosX() - m_Width / 2) - a_Chunk.GetPosX() * cChunkDef::Width;
-	int MaxRelX = (int)floor(GetPosX() + m_Width / 2) - a_Chunk.GetPosX() * cChunkDef::Width;
-	int MinRelZ = (int)floor(GetPosZ() - m_Width / 2) - a_Chunk.GetPosZ() * cChunkDef::Width;
-	int MaxRelZ = (int)floor(GetPosZ() + m_Width / 2) - a_Chunk.GetPosZ() * cChunkDef::Width;
-	int MinY = std::max(0, std::min(cChunkDef::Height - 1, POSY_TOINT));
-	int MaxY = std::max(0, std::min(cChunkDef::Height - 1, (int)ceil (GetPosY() + m_Height)));
+	int MinRelX = FloorC(GetPosX() - m_Width / 2) - a_Chunk.GetPosX() * cChunkDef::Width;
+	int MaxRelX = FloorC(GetPosX() + m_Width / 2) - a_Chunk.GetPosX() * cChunkDef::Width;
+	int MinRelZ = FloorC(GetPosZ() - m_Width / 2) - a_Chunk.GetPosZ() * cChunkDef::Width;
+	int MaxRelZ = FloorC(GetPosZ() + m_Width / 2) - a_Chunk.GetPosZ() * cChunkDef::Width;
+	int MinY = Clamp(POSY_TOINT, 0, cChunkDef::Height - 1);
+	int MaxY = Clamp(FloorC(GetPosY() + m_Height), 0, cChunkDef::Height - 1);
 	bool HasWater = false;
 	bool HasLava = false;
 	bool HasFire = false;
@@ -1175,7 +1176,7 @@ void cEntity::TickBurning(cChunk & a_Chunk)
 		m_TicksSinceLastLavaDamage++;
 		if (m_TicksSinceLastLavaDamage >= LAVA_TICKS_PER_DAMAGE)
 		{
-			if (!m_IsFireproof)
+			if (!IsFireproof())
 			{
 				TakeDamage(dtLavaContact, nullptr, LAVA_DAMAGE, 0);
 			}
@@ -1196,7 +1197,7 @@ void cEntity::TickBurning(cChunk & a_Chunk)
 		m_TicksSinceLastFireDamage++;
 		if (m_TicksSinceLastFireDamage >= FIRE_TICKS_PER_DAMAGE)
 		{
-			if (!m_IsFireproof)
+			if (!IsFireproof())
 			{
 				TakeDamage(dtFireContact, nullptr, FIRE_DAMAGE, 0);
 			}
@@ -1260,9 +1261,35 @@ void cEntity::DetectCacti(void)
 
 
 
+void cEntity::ScheduleMoveToWorld(cWorld * a_World, Vector3d a_NewPosition, bool a_SetPortalCooldown)
+{
+	m_NewWorld = a_World;
+	m_NewWorldPosition = a_NewPosition;
+	m_IsWorldChangeScheduled = true;
+	m_WorldChangeSetPortalCooldown = a_SetPortalCooldown;
+}
+
+
+
 
 bool cEntity::DetectPortal()
 {
+	// If somebody scheduled a world change with ScheduleMoveToWorld, change worlds now.
+	if (m_IsWorldChangeScheduled)
+	{
+		m_IsWorldChangeScheduled = false;
+
+		if (m_WorldChangeSetPortalCooldown)
+		{
+			// Delay the portal check.
+			m_PortalCooldownData.m_TicksDelayed = 0;
+			m_PortalCooldownData.m_ShouldPreventTeleportation = true;
+		}
+
+		MoveToWorld(m_NewWorld, false, m_NewWorldPosition);
+		return true;
+	}
+
 	if (GetWorld()->GetDimension() == dimOverworld)
 	{
 		if (GetWorld()->GetLinkedNetherWorldName().empty() && GetWorld()->GetLinkedEndWorldName().empty())
@@ -1290,7 +1317,7 @@ bool cEntity::DetectPortal()
 					return false;
 				}
 
-				if (IsPlayer() && !((cPlayer *)this)->IsGameModeCreative() && (m_PortalCooldownData.m_TicksDelayed != 80))
+				if (IsPlayer() && !(reinterpret_cast<cPlayer *>(this))->IsGameModeCreative() && (m_PortalCooldownData.m_TicksDelayed != 80))
 				{
 					// Delay teleportation for four seconds if the entity is a non-creative player
 					m_PortalCooldownData.m_TicksDelayed++;
@@ -1310,10 +1337,17 @@ bool cEntity::DetectPortal()
 					if (IsPlayer())
 					{
 						// Send a respawn packet before world is loaded / generated so the client isn't left in limbo
-						((cPlayer *)this)->GetClientHandle()->SendRespawn(dimOverworld);
+						(reinterpret_cast<cPlayer *>(this))->GetClientHandle()->SendRespawn(dimOverworld);
 					}
-					
-					return MoveToWorld(cRoot::Get()->CreateAndInitializeWorld(GetWorld()->GetLinkedOverworldName()), false);
+
+					Vector3d TargetPos = GetPosition();
+					TargetPos.x *= 8.0;
+					TargetPos.z *= 8.0;
+
+					cWorld * TargetWorld = cRoot::Get()->CreateAndInitializeWorld(GetWorld()->GetLinkedOverworldName(), dimNether, GetWorld()->GetName(), true);
+					LOGD("Jumping nether -> overworld");
+					new cNetherPortalScanner(this, TargetWorld, TargetPos, 256);
+					return true;
 				}
 				else
 				{
@@ -1326,11 +1360,18 @@ bool cEntity::DetectPortal()
 
 					if (IsPlayer())
 					{
-						((cPlayer *)this)->AwardAchievement(achEnterPortal);
-						((cPlayer *)this)->GetClientHandle()->SendRespawn(dimNether);
+						reinterpret_cast<cPlayer *>(this)->AwardAchievement(achEnterPortal);
+						reinterpret_cast<cPlayer *>(this)->GetClientHandle()->SendRespawn(dimNether);
 					}
-					
-					return MoveToWorld(cRoot::Get()->CreateAndInitializeWorld(GetWorld()->GetLinkedNetherWorldName(), dimNether, GetWorld()->GetName()), false);
+
+					Vector3d TargetPos = GetPosition();
+					TargetPos.x /= 8.0;
+					TargetPos.z /= 8.0;
+
+					cWorld * TargetWorld = cRoot::Get()->CreateAndInitializeWorld(GetWorld()->GetLinkedNetherWorldName(), dimNether, GetWorld()->GetName(), true);
+					LOGD("Jumping overworld -> nether");
+					new cNetherPortalScanner(this, TargetWorld, TargetPos, 128);
+					return true;
 				}
 			}
 			case E_BLOCK_END_PORTAL:
@@ -1352,7 +1393,7 @@ bool cEntity::DetectPortal()
 
 					if (IsPlayer())
 					{
-						cPlayer * Player = (cPlayer *)this;
+						cPlayer * Player = reinterpret_cast<cPlayer *>(this);
 						Player->TeleportToCoords(Player->GetLastBedPos().x, Player->GetLastBedPos().y, Player->GetLastBedPos().z);
 						Player->GetClientHandle()->SendRespawn(dimOverworld);
 					}
@@ -1370,8 +1411,8 @@ bool cEntity::DetectPortal()
 
 					if (IsPlayer())
 					{
-						((cPlayer *)this)->AwardAchievement(achEnterTheEnd);
-						((cPlayer *)this)->GetClientHandle()->SendRespawn(dimEnd);
+						reinterpret_cast<cPlayer *>(this)->AwardAchievement(achEnterTheEnd);
+						reinterpret_cast<cPlayer *>(this)->GetClientHandle()->SendRespawn(dimEnd);
 					}
 
 					return MoveToWorld(cRoot::Get()->CreateAndInitializeWorld(GetWorld()->GetLinkedEndWorldName(), dimEnd, GetWorld()->GetName()), false);
@@ -1392,7 +1433,7 @@ bool cEntity::DetectPortal()
 
 
 
-bool cEntity::DoMoveToWorld(cWorld * a_World, bool a_ShouldSendRespawn)
+bool cEntity::DoMoveToWorld(cWorld * a_World, bool a_ShouldSendRespawn, Vector3d a_NewPosition)
 {
 	UNUSED(a_ShouldSendRespawn);
 	ASSERT(a_World != nullptr);
@@ -1413,6 +1454,8 @@ bool cEntity::DoMoveToWorld(cWorld * a_World, bool a_ShouldSendRespawn)
 	// Remove all links to the old world
 	SetWorldTravellingFrom(GetWorld());  // cChunk::Tick() handles entity removal
 	GetWorld()->BroadcastDestroyEntity(*this);
+
+	SetPosition(a_NewPosition);
 
 	// Queue add to new world
 	a_World->AddEntity(this);
@@ -1438,7 +1481,7 @@ bool cEntity::MoveToWorld(const AString & a_WorldName, bool a_ShouldSendRespawn)
 		return false;
 	}
 
-	return DoMoveToWorld(World, a_ShouldSendRespawn);
+	return DoMoveToWorld(World, a_ShouldSendRespawn, GetPosition());
 }
 
 
@@ -1447,7 +1490,7 @@ bool cEntity::MoveToWorld(const AString & a_WorldName, bool a_ShouldSendRespawn)
 
 void cEntity::SetSwimState(cChunk & a_Chunk)
 {
-	int RelY = (int)floor(GetPosY() + 0.1);
+	int RelY = FloorC(GetPosY() + 0.1);
 	if ((RelY < 0) || (RelY >= cChunkDef::Height - 1))
 	{
 		m_IsSwimming = false;
@@ -1499,7 +1542,7 @@ void cEntity::HandleAir(void)
 	// See if the entity is /submerged/ water (block above is water)
 	// Get the type of block the entity is standing in:
 
-	int RespirationLevel = GetEquippedHelmet().m_Enchantments.GetLevel(cEnchantments::enchRespiration);
+	int RespirationLevel = static_cast<int>(GetEquippedHelmet().m_Enchantments.GetLevel(cEnchantments::enchRespiration));
 
 	if (IsSubmerged())
 	{
@@ -1510,7 +1553,7 @@ void cEntity::HandleAir(void)
 
 		if (RespirationLevel > 0)
 		{
-			((cPawn *)this)->AddEntityEffect(cEntityEffect::effNightVision, 200, 5, 0);
+			reinterpret_cast<cPawn *>(this)->AddEntityEffect(cEntityEffect::effNightVision, 200, 5, 0);
 		}
 
 		if (m_AirLevel <= 0)
@@ -1552,7 +1595,6 @@ void cEntity::HandleAir(void)
 
 
 
-/// Called when the entity starts burning
 void cEntity::OnStartedBurning(void)
 {
 	// Broadcast the change:
@@ -1563,7 +1605,6 @@ void cEntity::OnStartedBurning(void)
 
 
 
-/// Called when the entity finishes burning
 void cEntity::OnFinishedBurning(void)
 {
 	// Broadcast the change:
@@ -1574,7 +1615,6 @@ void cEntity::OnFinishedBurning(void)
 
 
 
-/// Sets the maximum value for the health
 void cEntity::SetMaxHealth(int a_MaxHealth)
 {
 	m_MaxHealth = a_MaxHealth;
@@ -1587,7 +1627,6 @@ void cEntity::SetMaxHealth(int a_MaxHealth)
 
 
 
-/// Sets whether the entity is fireproof
 void cEntity::SetIsFireproof(bool a_IsFireproof)
 {
 	m_IsFireproof = a_IsFireproof;
@@ -1597,7 +1636,6 @@ void cEntity::SetIsFireproof(bool a_IsFireproof)
 
 
 
-/// Puts the entity on fire for the specified amount of ticks
 void cEntity::StartBurning(int a_TicksLeftBurning)
 {
 	if (m_TicksLeftBurning > 0)
@@ -1615,7 +1653,6 @@ void cEntity::StartBurning(int a_TicksLeftBurning)
 
 
 
-/// Stops the entity from burning, resets all burning timers
 void cEntity::StopBurning(void)
 {
 	bool HasBeenBurning = (m_TicksLeftBurning > 0);
@@ -1647,7 +1684,7 @@ void cEntity::TeleportToEntity(cEntity & a_Entity)
 void cEntity::TeleportToCoords(double a_PosX, double a_PosY, double a_PosZ)
 {
 	//  ask the plugins to allow teleport to the new position.
-	if (!cRoot::Get()->GetPluginManager()->CallHookEntityTeleport(*this, m_LastPos, Vector3d(a_PosX, a_PosY, a_PosZ)))
+	if (!cRoot::Get()->GetPluginManager()->CallHookEntityTeleport(*this, m_LastPosition, Vector3d(a_PosX, a_PosY, a_PosZ)))
 	{
 		SetPosition(a_PosX, a_PosY, a_PosZ);
 		m_World->BroadcastTeleportEntity(*this);
@@ -1682,9 +1719,9 @@ void cEntity::BroadcastMovementUpdate(const cClientHandle * a_Exclude)
 		}
 		
 		// TODO: Pickups move disgracefully if relative move packets are sent as opposed to just velocity. Have a system to send relmove only when SetPosXXX() is called with a large difference in position
-		int DiffX = (int)(floor(GetPosX() * 32.0) - floor(m_LastPos.x * 32.0));
-		int DiffY = (int)(floor(GetPosY() * 32.0) - floor(m_LastPos.y * 32.0));
-		int DiffZ = (int)(floor(GetPosZ() * 32.0) - floor(m_LastPos.z * 32.0));
+		int DiffX = FloorC(GetPosX() * 32.0) - FloorC(m_LastSentPosition.x * 32.0);
+		int DiffY = FloorC(GetPosY() * 32.0) - FloorC(m_LastSentPosition.y * 32.0);
+		int DiffZ = FloorC(GetPosZ() * 32.0) - FloorC(m_LastSentPosition.z * 32.0);
 
 		if ((DiffX != 0) || (DiffY != 0) || (DiffZ != 0))  // Have we moved?
 		{
@@ -1693,22 +1730,22 @@ void cEntity::BroadcastMovementUpdate(const cClientHandle * a_Exclude)
 				// Difference within Byte limitations, use a relative move packet
 				if (m_bDirtyOrientation)
 				{
-					m_World->BroadcastEntityRelMoveLook(*this, (char)DiffX, (char)DiffY, (char)DiffZ, a_Exclude);
+					m_World->BroadcastEntityRelMoveLook(*this, static_cast<char>(DiffX), static_cast<char>(DiffY), static_cast<char>(DiffZ), a_Exclude);
 					m_bDirtyOrientation = false;
 				}
 				else
 				{
-					m_World->BroadcastEntityRelMove(*this, (char)DiffX, (char)DiffY, (char)DiffZ, a_Exclude);
+					m_World->BroadcastEntityRelMove(*this, static_cast<char>(DiffX), static_cast<char>(DiffY), static_cast<char>(DiffZ), a_Exclude);
 				}
 				// Clients seem to store two positions, one for the velocity packet and one for the teleport / relmove packet
-				// The latter is only changed with a relmove / teleport, and m_LastPos stores this position
-				m_LastPos = GetPosition();
+				// The latter is only changed with a relmove / teleport, and m_LastSentPosition stores this position
+				m_LastSentPosition = GetPosition();
 			}
 			else
 			{
 				// Too big a movement, do a teleport
 				m_World->BroadcastTeleportEntity(*this, a_Exclude);
-				m_LastPos = GetPosition();  // See above
+				m_LastSentPosition = GetPosition();  // See above
 				m_bDirtyOrientation = false;
 			}
 		}
@@ -1773,16 +1810,6 @@ void cEntity::Detach(void)
 bool cEntity::IsA(const char * a_ClassName) const
 {
 	return (strcmp(a_ClassName, "cEntity") == 0);
-}
-
-
-
-
-
-void cEntity::SetRot(const Vector3f & a_Rot)
-{
-	m_Rot = a_Rot;
-	m_bDirtyOrientation = true;
 }
 
 
@@ -1894,41 +1921,6 @@ void cEntity::SetWidth(double a_Width)
 
 
 
-
-void cEntity::AddPosX(double a_AddPosX)
-{
-	m_Pos.x += a_AddPosX;
-}
-
-
-
-
-void cEntity::AddPosY(double a_AddPosY)
-{
-	m_Pos.y += a_AddPosY;
-}
-
-
-
-
-void cEntity::AddPosZ(double a_AddPosZ)
-{
-	m_Pos.z += a_AddPosZ;
-}
-
-
-
-
-void cEntity::AddPosition(double a_AddPosX, double a_AddPosY, double a_AddPosZ)
-{
-	m_Pos.x += a_AddPosX;
-	m_Pos.y += a_AddPosY;
-	m_Pos.z += a_AddPosZ;
-}
-
-
-
-
 void cEntity::AddSpeed(double a_AddSpeedX, double a_AddSpeedY, double a_AddSpeedZ)
 {
 	DoSetSpeed(m_Speed.x + a_AddSpeedX, m_Speed.y + a_AddSpeedY, m_Speed.z + a_AddSpeedZ);
@@ -2010,36 +2002,10 @@ Vector3d cEntity::GetLookVector(void) const
 
 ////////////////////////////////////////////////////////////////////////////////
 // Set position
-void cEntity::SetPosition(double a_PosX, double a_PosY, double a_PosZ)
+void cEntity::SetPosition(const Vector3d & a_Position)
 {
-	m_Pos.Set(a_PosX, a_PosY, a_PosZ);
-}
-
-
-
-
-
-void cEntity::SetPosX(double a_PosX)
-{
-	m_Pos.x = a_PosX;
-}
-
-
-
-
-
-void cEntity::SetPosY(double a_PosY)
-{
-	m_Pos.y = a_PosY;
-}
-
-
-
-
-
-void cEntity::SetPosZ(double a_PosZ)
-{
-	m_Pos.z = a_PosZ;
+	m_LastPosition = m_Position;
+	m_Position = a_Position;
 }
 
 

@@ -138,80 +138,20 @@ void cProtocolRecognizer::SendBlockChanges(int a_ChunkX, int a_ChunkZ, const sSe
 
 
 
-void cProtocolRecognizer::SendChat(const AString & a_Message)
+void cProtocolRecognizer::SendChat(const AString & a_Message, eChatType a_Type)
 {
 	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendChat(a_Message);
+	m_Protocol->SendChat(a_Message, a_Type);
 }
 
 
 
 
 
-void cProtocolRecognizer::SendChat(const cCompositeChat & a_Message)
+void cProtocolRecognizer::SendChat(const cCompositeChat & a_Message, eChatType a_Type, bool a_ShouldUseChatPrefixes)
 {
 	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendChat(a_Message);
-}
-
-
-
-
-
-void cProtocolRecognizer::SendChatAboveActionBar(const AString & a_Message)
-{
-	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendChatAboveActionBar(a_Message);
-}
-
-
-
-
-
-void cProtocolRecognizer::SendChatAboveActionBar(const cCompositeChat & a_Message)
-{
-	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendChatAboveActionBar(a_Message);
-}
-
-
-
-
-
-void cProtocolRecognizer::SendChatSystem(const AString & a_Message)
-{
-	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendChatSystem(a_Message);
-}
-
-
-
-
-
-void cProtocolRecognizer::SendChatSystem(const cCompositeChat & a_Message)
-{
-	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendChatSystem(a_Message);
-}
-
-
-
-
-
-void cProtocolRecognizer::SendChatType(const AString & a_Message, eChatType type)
-{
-	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendChatType(a_Message, type);
-}
-
-
-
-
-
-void cProtocolRecognizer::SendChatType(const cCompositeChat & a_Message, eChatType type)
-{
-	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendChatType(a_Message, type);
+	m_Protocol->SendChat(a_Message, a_Type, a_ShouldUseChatPrefixes);
 }
 
 
@@ -258,12 +198,12 @@ void cProtocolRecognizer::SendDisconnect(const AString & a_Reason)
 	{
 		// This is used when the client sends a server-ping, respond with the default packet:
 		static const int Packet = 0xff;  // PACKET_DISCONNECT
-		SendData((const char *)&Packet, 1);  // WriteByte()
+		SendData(reinterpret_cast<const char *>(&Packet), 1);  // WriteByte()
 
-		AString UTF16 = UTF8ToRawBEUTF16(a_Reason.c_str(), a_Reason.length());
-		static const u_short Size = htons((u_short)(UTF16.size() / 2));
-		SendData((const char *)&Size, 2);      // WriteShort()
-		SendData(UTF16.data(), UTF16.size());  // WriteString()
+		auto UTF16 = UTF8ToRawBEUTF16(a_Reason);
+		static const u_short Size = htons(static_cast<u_short>(UTF16.size()));
+		SendData(reinterpret_cast<const char *>(&Size), 2);      // WriteShort()
+		SendData(reinterpret_cast<const char *>(UTF16.data()), UTF16.size() * sizeof(char16_t));  // WriteString()
 	}
 }
 
@@ -440,7 +380,7 @@ void cProtocolRecognizer::SendInventorySlot(char a_WindowID, short a_SlotNum, co
 
 
 
-void cProtocolRecognizer::SendKeepAlive(int a_PingID)
+void cProtocolRecognizer::SendKeepAlive(UInt32 a_PingID)
 {
 	ASSERT(m_Protocol != nullptr);
 	m_Protocol->SendKeepAlive(a_PingID);
@@ -470,30 +410,10 @@ void cProtocolRecognizer::SendLoginSuccess(void)
 
 
 
-void cProtocolRecognizer::SendMapColumn(int a_ID, int a_X, int a_Y, const Byte * a_Colors, unsigned int a_Length, unsigned int m_Scale)
+void cProtocolRecognizer::SendMapData(const cMap & a_Map, int a_DataStartX, int a_DataStartY)
 {
 	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendMapColumn(a_ID, a_X, a_Y, a_Colors, a_Length, m_Scale);
-}
-
-
-
-
-
-void cProtocolRecognizer::SendMapDecorators(int a_ID, const cMapDecoratorList & a_Decorators, unsigned int m_Scale)
-{
-	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendMapDecorators(a_ID, a_Decorators, m_Scale);
-}
-
-
-
-
-
-void cProtocolRecognizer::SendMapInfo(int a_ID, unsigned int a_Scale)
-{
-	ASSERT(m_Protocol != nullptr);
-	m_Protocol->SendMapInfo(a_ID, a_Scale);
+	m_Protocol->SendMapData(a_Map, a_DataStartX, a_DataStartY);
 }
 
 
@@ -789,7 +709,7 @@ void cProtocolRecognizer::SendSoundEffect(const AString & a_SoundName, double a_
 
 
 
-void cProtocolRecognizer::SendSoundParticleEffect(int a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data)
+void cProtocolRecognizer::SendSoundParticleEffect(const EffectID a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data)
 {
 	ASSERT(m_Protocol != nullptr);
 	m_Protocol->SendSoundParticleEffect(a_EffectID, a_SrcX, a_SrcY, a_SrcZ, a_Data);
@@ -1006,13 +926,13 @@ bool cProtocolRecognizer::TryRecognizeProtocol(void)
 
 	// Lengthed protocol, try if it has the entire initial handshake packet:
 	UInt32 PacketLen;
-	UInt32 ReadSoFar = (UInt32)m_Buffer.GetReadableSpace();
+	UInt32 ReadSoFar = static_cast<UInt32>(m_Buffer.GetReadableSpace());
 	if (!m_Buffer.ReadVarInt(PacketLen))
 	{
 		// Not enough bytes for the packet length, keep waiting
 		return false;
 	}
-	ReadSoFar -= (UInt32)m_Buffer.GetReadableSpace();
+	ReadSoFar -= static_cast<UInt32>(m_Buffer.GetReadableSpace());
 	if (!m_Buffer.CanReadBytes(PacketLen))
 	{
 		// Not enough bytes for the packet, keep waiting

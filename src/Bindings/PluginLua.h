@@ -14,8 +14,8 @@
 #include "LuaState.h"
 
 // Names for the global variables through which the plugin is identified in its LuaState
-#define LUA_PLUGIN_NAME_VAR_NAME     "_MCServerInternal_PluginName"
-#define LUA_PLUGIN_INSTANCE_VAR_NAME "_MCServerInternal_PluginInstance"
+#define LUA_PLUGIN_NAME_VAR_NAME     "_CuberiteInternal_PluginName"
+#define LUA_PLUGIN_INSTANCE_VAR_NAME "_CuberiteInternal_PluginInstance"
 
 
 
@@ -105,6 +105,8 @@ public:
 
 	virtual bool OnBlockSpread              (cWorld & a_World, int a_BlockX, int a_BlockY, int a_BlockZ, eSpreadSource a_Source) override;
 	virtual bool OnBlockToPickups           (cWorld & a_World, cEntity * a_Digger, int a_BlockX, int a_BlockY, int a_BlockZ, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta, cItems & a_Pickups) override;
+	virtual bool OnBrewingCompleting        (cWorld & a_World, cBrewingstandEntity & a_BrewingstandEntity) override;
+	virtual bool OnBrewingCompleted         (cWorld & a_World, cBrewingstandEntity & a_BrewingstandEntity) override;
 	virtual bool OnChat                     (cPlayer & a_Player, AString & a_Message) override;
 	virtual bool OnChunkAvailable           (cWorld & a_World, int a_ChunkX, int a_ChunkZ) override;
 	virtual bool OnChunkGenerated           (cWorld & a_World, int a_ChunkX, int a_ChunkZ, cChunkDesc * a_ChunkDesc) override;
@@ -123,8 +125,9 @@ public:
 	virtual bool OnHandshake                (cClientHandle & a_Client, const AString & a_Username) override;
 	virtual bool OnHopperPullingItem        (cWorld & a_World, cHopperEntity & a_Hopper, int a_DstSlotNum, cBlockEntityWithItems & a_SrcEntity, int a_SrcSlotNum) override;
 	virtual bool OnHopperPushingItem        (cWorld & a_World, cHopperEntity & a_Hopper, int a_SrcSlotNum, cBlockEntityWithItems & a_DstEntity, int a_DstSlotNum) override;
+	virtual bool OnKilled                   (cEntity & a_Victim, TakeDamageInfo & a_TDI, AString & a_DeathMessage) override;
 	virtual bool OnKilling                  (cEntity & a_Victim, cEntity * a_Killer, TakeDamageInfo & a_TDI) override;
-	virtual bool OnLogin                    (cClientHandle & a_Client, int a_ProtocolVersion, const AString & a_Username) override;
+	virtual bool OnLogin                    (cClientHandle & a_Client, UInt32 a_ProtocolVersion, const AString & a_Username) override;
 	virtual bool OnPlayerAnimation          (cPlayer & a_Player, int a_Animation) override;
 	virtual bool OnPlayerBreakingBlock      (cPlayer & a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, char a_BlockFace, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta) override;
 	virtual bool OnPlayerBrokenBlock        (cPlayer & a_Player, int a_BlockX, int a_BlockY, int a_BlockZ, char a_BlockFace, BLOCKTYPE a_BlockType, NIBBLETYPE a_BlockMeta) override;

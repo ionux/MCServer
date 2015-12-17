@@ -10,9 +10,6 @@
 
 // Compiler-dependent stuff:
 #if defined(_MSC_VER)
-	// MSVC produces warning C4481 on the override keyword usage, so disable the warning altogether
-	#pragma warning(disable:4481)
-
 	// Disable some warnings that we don't care about:
 	#pragma warning(disable:4100)  // Unreferenced formal parameter
 
@@ -34,6 +31,7 @@
 
 	// Disabled because it's useless:
 	#pragma warning(disable: 4512)  // 'class': assignment operator could not be generated - reported for each class that has a reference-type member
+	#pragma warning(disable: 4351)  // new behavior: elements of array 'member' will be default initialized
 	
 	// 2014_01_06 xoft: Disabled this warning because MSVC is stupid and reports it in obviously wrong places
 	// #pragma warning(3 : 4244)  // Conversion from 'type1' to 'type2', possible loss of data
@@ -143,6 +141,7 @@ typedef unsigned short     UInt16;
 typedef unsigned char      UInt8;
 
 typedef unsigned char Byte;
+typedef Byte ColourID;
 
 
 // If you get an error about specialization check the size of integral types
@@ -224,7 +223,7 @@ template class SizeChecker<UInt8,  1>;
 #endif
 
 #if defined(ANDROID_NDK)
-	#define FILE_IO_PREFIX "/sdcard/mcserver/"
+	#define FILE_IO_PREFIX "/sdcard/Cuberite/"
 #else
 	#define FILE_IO_PREFIX ""
 #endif
@@ -245,6 +244,7 @@ template class SizeChecker<UInt8,  1>;
 
 
 // STL stuff:
+#include <array>
 #include <chrono>
 #include <vector>
 #include <list>
@@ -261,14 +261,33 @@ template class SizeChecker<UInt8,  1>;
 
 
 
+// Common headers (part 1, without macros):
+#include "StringUtils.h"
+#include "OSSupport/CriticalSection.h"
+#include "OSSupport/Event.h"
+#include "OSSupport/File.h"
+#include "OSSupport/StackTrace.h"
+
 #ifndef TEST_GLOBALS
-	// Common headers (part 1, without macros):
-	#include "StringUtils.h"
-	#include "OSSupport/CriticalSection.h"
-	#include "OSSupport/Event.h"
-	#include "OSSupport/File.h"
-	#include "Logger.h"
-	#include "OSSupport/StackTrace.h"
+
+// These fiunctions are defined in Logger.cpp, but are declared here to avoid including all of logger.h
+extern void LOG       (const char * a_Format, ...) FORMATSTRING(1, 2);
+extern void LOGINFO   (const char * a_Format, ...) FORMATSTRING(1, 2);
+extern void LOGWARNING(const char * a_Format, ...) FORMATSTRING(1, 2);
+extern void LOGERROR  (const char * a_Format, ...) FORMATSTRING(1, 2);
+
+
+
+
+
+// In debug builds, translate LOGD to LOG, otherwise leave it out altogether:
+#ifdef _DEBUG
+	#define LOGD LOG
+#else
+	#define LOGD(...)
+#endif  // _DEBUG
+
+#define LOGWARN LOGWARNING
 #else
 	// Logging functions
 void inline LOGERROR(const char * a_Format, ...) FORMATSTRING(1, 2);
@@ -315,6 +334,9 @@ void inline LOG(const char * a_Format, ...)
 	va_end(argList);
 }
 
+#define LOGINFO LOG
+#define LOGWARN LOGWARNING
+
 #endif
 
 
@@ -323,15 +345,15 @@ void inline LOG(const char * a_Format, ...)
 
 // Common definitions:
 
-/// Evaluates to the number of elements in an array (compile-time!)
+/** Evaluates to the number of elements in an array (compile-time!) */
 #define ARRAYCOUNT(X) (sizeof(X) / sizeof(*(X)))
 
-/// Allows arithmetic expressions like "32 KiB" (but consider using parenthesis around it, "(32 KiB)")
+/** Allows arithmetic expressions like "32 KiB" (but consider using parenthesis around it, "(32 KiB)") */
 #define KiB * 1024
 #define MiB * 1024 * 1024
 
-/// Faster than (int)floorf((float)x / (float)div)
-#define FAST_FLOOR_DIV( x, div) (((x) - (((x) < 0) ? ((div) - 1) : 0)) / (div))
+/** Faster than (int)floorf((float)x / (float)div) */
+#define FAST_FLOOR_DIV(x, div) (((x) - (((x) < 0) ? ((div) - 1) : 0)) / (div))
 
 // Own version of assert() that writes failed assertions to the log for review
 #ifdef TEST_GLOBALS

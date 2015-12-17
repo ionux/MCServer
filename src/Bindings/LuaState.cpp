@@ -43,6 +43,76 @@ const cLuaState::cRet cLuaState::Return = {};
 
 
 ////////////////////////////////////////////////////////////////////////////////
+// cLuaStateTracker:
+
+void cLuaStateTracker::Add(cLuaState & a_LuaState)
+{
+	auto & Instance = Get();
+	cCSLock Lock(Instance.m_CSLuaStates);
+	Instance.m_LuaStates.push_back(&a_LuaState);
+}
+
+
+
+
+void cLuaStateTracker::Del(cLuaState & a_LuaState)
+{
+	auto & Instance = Get();
+	cCSLock Lock(Instance.m_CSLuaStates);
+	Instance.m_LuaStates.erase(
+		std::remove_if(
+			Instance.m_LuaStates.begin(), Instance.m_LuaStates.end(),
+			[&a_LuaState](cLuaStatePtr a_StoredLuaState)
+			{
+				return (&a_LuaState == a_StoredLuaState);
+			}
+		),
+		Instance.m_LuaStates.end()
+	);
+}
+
+
+
+
+
+AString cLuaStateTracker::GetStats(void)
+{
+	auto & Instance = Get();
+	cCSLock Lock(Instance.m_CSLuaStates);
+	AString res;
+	int Total = 0;
+	for (auto state: Instance.m_LuaStates)
+	{
+		int Mem = 0;
+		if (!state->Call("collectgarbage", "count", cLuaState::Return, Mem))
+		{
+			res.append(Printf("Cannot query memory for state \"%s\"\n", state->GetSubsystemName().c_str()));
+		}
+		else
+		{
+			res.append(Printf("State \"%s\" is using %d KiB of memory\n", state->GetSubsystemName().c_str(), Mem));
+			Total += Mem;
+		}
+	}
+	res.append(Printf("Total memory used by Lua: %d KiB\n", Total));
+	return res;
+}
+
+
+
+
+
+cLuaStateTracker & cLuaStateTracker::Get(void)
+{
+	static cLuaStateTracker Inst;  // The singleton
+	return Inst;
+}
+
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////
 // cLuaState:
 
 cLuaState::cLuaState(const AString & a_SubsystemName) :
@@ -98,6 +168,7 @@ void cLuaState::Create(void)
 	m_LuaState = lua_open();
 	luaL_openlibs(m_LuaState);
 	m_IsOwned = true;
+	cLuaStateTracker::Add(*this);
 }
 
 
@@ -128,11 +199,12 @@ void cLuaState::Close(void)
 	{
 		LOGWARNING(
 			"%s: Detected mis-use, calling Close() on an attached state (0x%p). Detaching instead.",
-			__FUNCTION__, m_LuaState
+			__FUNCTION__, static_cast<void *>(m_LuaState)
 		);
 		Detach();
 		return;
 	}
+	cLuaStateTracker::Del(*this);
 	lua_close(m_LuaState);
 	m_LuaState = nullptr;
 	m_IsOwned = false;
@@ -146,7 +218,7 @@ void cLuaState::Attach(lua_State * a_State)
 {
 	if (m_LuaState != nullptr)
 	{
-		LOGINFO("%s: Already contains a LuaState (0x%p), will be closed / detached.", __FUNCTION__, m_LuaState);
+		LOGINFO("%s: Already contains a LuaState (0x%p), will be closed / detached.", __FUNCTION__, static_cast<void *>(m_LuaState));
 		if (m_IsOwned)
 		{
 			Close();
@@ -174,7 +246,7 @@ void cLuaState::Detach(void)
 	{
 		LOGWARNING(
 			"%s: Detected a mis-use, calling Detach() when the state is owned. Closing the owned state (0x%p).",
-			__FUNCTION__, m_LuaState
+			__FUNCTION__, static_cast<void *>(m_LuaState)
 		);
 		Close();
 		return;
@@ -211,26 +283,69 @@ void cLuaState::AddPackagePath(const AString & a_PathVariable, const AString & a
 
 
 
-bool cLuaState::LoadFile(const AString & a_FileName)
+bool cLuaState::LoadFile(const AString & a_FileName, bool a_LogWarnings)
 {
 	ASSERT(IsValid());
-	
+
 	// Load the file:
 	int s = luaL_loadfile(m_LuaState, a_FileName.c_str());
-	if (ReportErrors(s))
+	if (s != 0)
 	{
-		LOGWARNING("Can't load %s because of an error in file %s", m_SubsystemName.c_str(), a_FileName.c_str());
+		if (a_LogWarnings)
+		{
+			LOGWARNING("Can't load %s because of a load error in file %s: %d (%s)", m_SubsystemName.c_str(), a_FileName.c_str(), s, lua_tostring(m_LuaState, -1));
+		}
+		lua_pop(m_LuaState, 1);
 		return false;
 	}
 
 	// Execute the globals:
 	s = lua_pcall(m_LuaState, 0, LUA_MULTRET, 0);
-	if (ReportErrors(s))
+	if (s != 0)
 	{
-		LOGWARNING("Error in %s in file %s", m_SubsystemName.c_str(), a_FileName.c_str());
+		if (a_LogWarnings)
+		{
+			LOGWARNING("Can't load %s because of an initialization error in file %s: %d (%s)", m_SubsystemName.c_str(), a_FileName.c_str(), s, lua_tostring(m_LuaState, -1));
+		}
+		lua_pop(m_LuaState, 1);
 		return false;
 	}
-	
+
+	return true;
+}
+
+
+
+
+
+bool cLuaState::LoadString(const AString & a_StringToLoad, const AString & a_FileName, bool a_LogWarnings)
+{
+	ASSERT(IsValid());
+
+	// Load the file:
+	int s = luaL_loadstring(m_LuaState, a_StringToLoad.c_str());
+	if (s != 0)
+	{
+		if (a_LogWarnings)
+		{
+			LOGWARNING("Can't load %s because of a load error in string from \"%s\": %d (%s)", m_SubsystemName.c_str(), a_FileName.c_str(), s, lua_tostring(m_LuaState, -1));
+		}
+		lua_pop(m_LuaState, 1);
+		return false;
+	}
+
+	// Execute the globals:
+	s = lua_pcall(m_LuaState, 0, LUA_MULTRET, 0);
+	if (s != 0)
+	{
+		if (a_LogWarnings)
+		{
+			LOGWARNING("Can't load %s because of an initialization error in string from \"%s\": %d (%s)", m_SubsystemName.c_str(), a_FileName.c_str(), s, lua_tostring(m_LuaState, -1));
+		}
+		lua_pop(m_LuaState, 1);
+		return false;
+	}
+
 	return true;
 }
 
@@ -371,7 +486,7 @@ void cLuaState::Push(const AStringVector & a_Vector)
 {
 	ASSERT(IsValid());
 
-	lua_createtable(m_LuaState, (int)a_Vector.size(), 0);
+	lua_createtable(m_LuaState, static_cast<int>(a_Vector.size()), 0);
 	int newTable = lua_gettop(m_LuaState);
 	int index = 1;
 	for (AStringVector::const_iterator itr = a_Vector.begin(), end = a_Vector.end(); itr != end; ++itr, ++index)
@@ -390,7 +505,7 @@ void cLuaState::Push(const cCraftingGrid * a_Grid)
 {
 	ASSERT(IsValid());
 
-	tolua_pushusertype(m_LuaState, (void *)a_Grid, "cCraftingGrid");
+	tolua_pushusertype(m_LuaState, reinterpret_cast<void *>(const_cast<cCraftingGrid *>(a_Grid)), "cCraftingGrid");
 	m_NumCurrentFunctionArgs += 1;
 }
 
@@ -402,7 +517,7 @@ void cLuaState::Push(const cCraftingRecipe * a_Recipe)
 {
 	ASSERT(IsValid());
 
-	tolua_pushusertype(m_LuaState, (void *)a_Recipe, "cCraftingRecipe");
+	tolua_pushusertype(m_LuaState, reinterpret_cast<void *>(const_cast<cCraftingRecipe *>(a_Recipe)), "cCraftingRecipe");
 	m_NumCurrentFunctionArgs += 1;
 }
 
@@ -426,7 +541,7 @@ void cLuaState::Push(const cItems & a_Items)
 {
 	ASSERT(IsValid());
 
-	tolua_pushusertype(m_LuaState, (void *)&a_Items, "cItems");
+	tolua_pushusertype(m_LuaState, reinterpret_cast<void *>(const_cast<cItems *>(&a_Items)), "cItems");
 	m_NumCurrentFunctionArgs += 1;
 }
 
@@ -438,7 +553,19 @@ void cLuaState::Push(const cPlayer * a_Player)
 {
 	ASSERT(IsValid());
 
-	tolua_pushusertype(m_LuaState, (void *)a_Player, "cPlayer");
+	tolua_pushusertype(m_LuaState, reinterpret_cast<void *>(const_cast<cPlayer *>(a_Player)), "cPlayer");
+	m_NumCurrentFunctionArgs += 1;
+}
+
+
+
+
+
+void cLuaState::Push(const cLuaState::cRef & a_Ref)
+{
+	ASSERT(IsValid());
+
+	lua_rawgeti(m_LuaState, LUA_REGISTRYINDEX, static_cast<int>(a_Ref));
 	m_NumCurrentFunctionArgs += 1;
 }
 
@@ -450,7 +577,7 @@ void cLuaState::Push(const HTTPRequest * a_Request)
 {
 	ASSERT(IsValid());
 
-	tolua_pushusertype(m_LuaState, (void *)a_Request, "HTTPRequest");
+	tolua_pushusertype(m_LuaState, reinterpret_cast<void *>(const_cast<HTTPRequest *>(a_Request)), "HTTPRequest");
 	m_NumCurrentFunctionArgs += 1;
 }
 
@@ -462,7 +589,7 @@ void cLuaState::Push(const HTTPTemplateRequest * a_Request)
 {
 	ASSERT(IsValid());
 
-	tolua_pushusertype(m_LuaState, (void *)a_Request, "HTTPTemplateRequest");
+	tolua_pushusertype(m_LuaState, reinterpret_cast<void *>(const_cast<HTTPTemplateRequest *>(a_Request)), "HTTPTemplateRequest");
 	m_NumCurrentFunctionArgs += 1;
 }
 
@@ -474,7 +601,7 @@ void cLuaState::Push(const Vector3d & a_Vector)
 {
 	ASSERT(IsValid());
 
-	tolua_pushusertype(m_LuaState, (void *)&a_Vector, "Vector3<double>");
+	tolua_pushusertype(m_LuaState, reinterpret_cast<void *>(const_cast<Vector3d *>(&a_Vector)), "Vector3<double>");
 	m_NumCurrentFunctionArgs += 1;
 }
 
@@ -486,7 +613,7 @@ void cLuaState::Push(const Vector3d * a_Vector)
 {
 	ASSERT(IsValid());
 
-	tolua_pushusertype(m_LuaState, (void *)a_Vector, "Vector3<double>");
+	tolua_pushusertype(m_LuaState, reinterpret_cast<void *>(const_cast<Vector3d *>(a_Vector)), "Vector3<double>");
 	m_NumCurrentFunctionArgs += 1;
 }
 
@@ -498,7 +625,7 @@ void cLuaState::Push(const Vector3i & a_Vector)
 {
 	ASSERT(IsValid());
 
-	tolua_pushusertype(m_LuaState, (void *)&a_Vector, "Vector3<int>");
+	tolua_pushusertype(m_LuaState, reinterpret_cast<void *>(const_cast<Vector3i *>(&a_Vector)), "Vector3<int>");
 	m_NumCurrentFunctionArgs += 1;
 }
 
@@ -510,7 +637,7 @@ void cLuaState::Push(const Vector3i * a_Vector)
 {
 	ASSERT(IsValid());
 
-	tolua_pushusertype(m_LuaState, (void *)a_Vector, "Vector3<int>");
+	tolua_pushusertype(m_LuaState, reinterpret_cast<void *>(const_cast<Vector3i *>(a_Vector)), "Vector3<int>");
 	m_NumCurrentFunctionArgs += 1;
 }
 
@@ -656,6 +783,30 @@ void cLuaState::Push(int a_Value)
 
 
 
+void cLuaState::Push(long a_Value)
+{
+	ASSERT(IsValid());
+
+	tolua_pushnumber(m_LuaState, static_cast<lua_Number>(a_Value));
+	m_NumCurrentFunctionArgs += 1;
+}
+
+
+
+
+
+void cLuaState::Push(UInt32 a_Value)
+{
+	ASSERT(IsValid());
+
+	tolua_pushnumber(m_LuaState, a_Value);
+	m_NumCurrentFunctionArgs += 1;
+}
+
+
+
+
+
 void cLuaState::Push(void * a_Ptr)
 {
 	UNUSED(a_Ptr);
@@ -765,14 +916,17 @@ bool cLuaState::GetStackValue(int a_StackPos, double & a_ReturnedVal)
 
 
 
-bool cLuaState::GetStackValue(int a_StackPos, float & a_ReturnedVal)
+bool cLuaState::GetStackValue(int a_StackPos, eBlockFace & a_ReturnedVal)
 {
-	if (lua_isnumber(m_LuaState, a_StackPos))
+	if (!lua_isnumber(m_LuaState, a_StackPos))
 	{
-		a_ReturnedVal = static_cast<float>(tolua_tonumber(m_LuaState, a_StackPos, a_ReturnedVal));
-		return true;
+		return false;
 	}
-	return false;
+	a_ReturnedVal = static_cast<eBlockFace>(Clamp(
+		static_cast<int>(tolua_tonumber(m_LuaState, a_StackPos, a_ReturnedVal)),
+		static_cast<int>(BLOCK_FACE_MIN), static_cast<int>(BLOCK_FACE_MAX))
+	);
+	return true;
 }
 
 
@@ -790,6 +944,87 @@ bool cLuaState::GetStackValue(int a_StackPos, eWeather & a_ReturnedVal)
 		static_cast<int>(wSunny), static_cast<int>(wThunderstorm))
 	);
 	return true;
+}
+
+
+
+
+
+bool cLuaState::GetStackValue(int a_StackPos, float & a_ReturnedVal)
+{
+	if (lua_isnumber(m_LuaState, a_StackPos))
+	{
+		a_ReturnedVal = static_cast<float>(tolua_tonumber(m_LuaState, a_StackPos, a_ReturnedVal));
+		return true;
+	}
+	return false;
+}
+
+
+
+
+
+cLuaState::cStackValue cLuaState::WalkToValue(const AString & a_Name)
+{
+	// There needs to be at least one value on the stack:
+	ASSERT(lua_gettop(m_LuaState) > 0);
+
+	// Iterate over path and replace the top of the stack with the walked element
+	lua_pushvalue(m_LuaState, -1);  // Copy the stack value into the "working area"
+	auto path = StringSplit(a_Name, ".");
+	for (const auto & elem: path)
+	{
+		// If the value is not a table, bail out (error):
+		if (!lua_istable(m_LuaState, -1))
+		{
+			lua_pop(m_LuaState, 1);
+			return cStackValue();
+		}
+
+		// Get the next part of the path:
+		lua_getfield(m_LuaState, -1, elem.c_str());
+
+		// Remove the previous value from the stack (keep only the new one):
+		lua_remove(m_LuaState, -2);
+	}  // for elem - path[]
+	if (lua_isnil(m_LuaState, -1))
+	{
+		lua_pop(m_LuaState, 1);
+		return cStackValue();
+	}
+	return cStackValue(*this);
+}
+
+
+
+
+
+cLuaState::cStackValue cLuaState::WalkToNamedGlobal(const AString & a_Name)
+{
+	// Iterate over path and replace the top of the stack with the walked element
+	lua_getglobal(m_LuaState, "_G");
+	auto path = StringSplit(a_Name, ".");
+	for (const auto & elem: path)
+	{
+		// If the value is not a table, bail out (error):
+		if (!lua_istable(m_LuaState, -1))
+		{
+			lua_pop(m_LuaState, 1);
+			return cStackValue();
+		}
+
+		// Get the next part of the path:
+		lua_getfield(m_LuaState, -1, elem.c_str());
+
+		// Remove the previous value from the stack (keep only the new one):
+		lua_remove(m_LuaState, -2);
+	}  // for elem - path[]
+	if (lua_isnil(m_LuaState, -1))
+	{
+		lua_pop(m_LuaState, 1);
+		return cStackValue();
+	}
+	return std::move(cStackValue(*this));
 }
 
 
@@ -974,7 +1209,7 @@ bool cLuaState::CheckParamString(int a_StartParam, int a_EndParam)
 	tolua_Error tolua_err;
 	for (int i = a_StartParam; i <= a_EndParam; i++)
 	{
-		if (tolua_isstring(m_LuaState, i, 0, &tolua_err))
+		if (lua_isstring(m_LuaState, i))
 		{
 			continue;
 		}
@@ -982,6 +1217,9 @@ bool cLuaState::CheckParamString(int a_StartParam, int a_EndParam)
 		lua_Debug entry;
 		VERIFY(lua_getstack(m_LuaState, 0,   &entry));
 		VERIFY(lua_getinfo (m_LuaState, "n", &entry));
+		tolua_err.array = 0;
+		tolua_err.type = "string";
+		tolua_err.index = i;
 		AString ErrMsg = Printf("#ferror in function '%s'.", (entry.name != nullptr) ? entry.name : "?");
 		tolua_error(m_LuaState, ErrMsg.c_str(), &tolua_err);
 		return false;
@@ -1339,7 +1577,7 @@ void cLuaState::LogStack(lua_State * a_LuaState, const char * a_Header)
 		{
 			case LUA_TBOOLEAN: Value.assign((lua_toboolean(a_LuaState, i) != 0) ? "true" : "false"); break;
 			case LUA_TLIGHTUSERDATA: Printf(Value, "%p", lua_touserdata(a_LuaState, i)); break;
-			case LUA_TNUMBER:        Printf(Value, "%f", (double)lua_tonumber(a_LuaState, i)); break;
+			case LUA_TNUMBER:        Printf(Value, "%f", static_cast<double>(lua_tonumber(a_LuaState, i))); break;
 			case LUA_TSTRING:        Printf(Value, "%s", lua_tostring(a_LuaState, i)); break;
 			case LUA_TTABLE:         Printf(Value, "%p", lua_topointer(a_LuaState, i)); break;
 			default: break;

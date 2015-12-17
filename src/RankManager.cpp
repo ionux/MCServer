@@ -1846,7 +1846,7 @@ void cRankManager::SetRankVisuals(
 		stmt.bind(2, a_MsgSuffix);
 		stmt.bind(3, a_MsgNameColorCode);
 		stmt.bind(4, a_RankName);
-		if (!stmt.executeStep())
+		if (stmt.exec() < 1)
 		{
 			LOGINFO("%s: Rank %s not found, visuals not set.", __FUNCTION__, a_RankName.c_str());
 		}
@@ -2248,10 +2248,10 @@ void cRankManager::CreateDefaults(void)
 	AddGroupToRank("Everything", "Admin");
 
 	// Add permissions to groups:
-	AddPermissionToGroup("core.build", "Default");
-	AddPermissionToGroup("core.tp",    "Teleport");
-	AddPermissionToGroup("core.kick",  "Kick");
-	AddPermissionToGroup("*",          "Everything");
+	AddPermissionToGroup("core.build",    "Default");
+	AddPermissionToGroup("core.teleport", "Teleport");
+	AddPermissionToGroup("core.kick",     "Kick");
+	AddPermissionToGroup("*",             "Everything");
 
 	// Set the default rank:
 	SetDefaultRank("Default");

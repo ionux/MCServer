@@ -43,7 +43,7 @@ class cDebugCallbacks :
 		{
 			UNUSED(a_Connection);
 			
-			cHTTPFormParser * FormParser = (cHTTPFormParser *)(a_Request.GetUserData());
+			cHTTPFormParser * FormParser = reinterpret_cast<cHTTPFormParser *>(a_Request.GetUserData());
 			if (FormParser != nullptr)
 			{
 				FormParser->Parse(a_Data, a_Size);
@@ -53,7 +53,7 @@ class cDebugCallbacks :
 		
 		virtual void OnRequestFinished(cHTTPConnection & a_Connection, cHTTPRequest & a_Request) override
 		{
-			cHTTPFormParser * FormParser = (cHTTPFormParser *)(a_Request.GetUserData());
+			cHTTPFormParser * FormParser = reinterpret_cast<cHTTPFormParser *>(a_Request.GetUserData());
 			if (FormParser != nullptr)
 			{
 				if (FormParser->Finish())
@@ -83,7 +83,7 @@ class cDebugCallbacks :
 			{
 				if (!a_Request.HasAuth() || (a_Request.GetAuthUsername() != "a") || (a_Request.GetAuthPassword() != "b"))
 				{
-					a_Connection.SendNeedAuth("MCServer WebAdmin");
+					a_Connection.SendNeedAuth("Cuberite WebAdmin");
 					return;
 				}
 			}

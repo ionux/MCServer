@@ -38,7 +38,7 @@ cChunkMap::cChunkMap(cWorld * a_World) :
 	m_World(a_World),
 	m_Pool(
 		new cListAllocationPool<cChunkData::sChunkSection, 1600>(
-			std::auto_ptr<cAllocationPool<cChunkData::sChunkSection>::cStarvationCallbacks>(
+			std::unique_ptr<cAllocationPool<cChunkData::sChunkSection>::cStarvationCallbacks>(
 				new cStarvationCallbacks()
 			)
 		)
@@ -409,22 +409,6 @@ void cChunkMap::BroadcastBlockEntity(int a_BlockX, int a_BlockY, int a_BlockZ, c
 
 
 
-void cChunkMap::BroadcastChunkData(int a_ChunkX, int a_ChunkZ, cChunkDataSerializer & a_Serializer, const cClientHandle * a_Exclude)
-{
-	cCSLock Lock(m_CSLayers);
-	cChunkPtr Chunk = GetChunkNoGen(a_ChunkX, a_ChunkZ);
-	if (Chunk == nullptr)
-	{
-		return;
-	}
-	// It's perfectly legal to broadcast packets even to invalid chunks!
-	Chunk->BroadcastChunkData(a_Serializer, a_Exclude);
-}
-
-
-
-
-
 void cChunkMap::BroadcastCollectEntity(const cEntity & a_Entity, const cPlayer & a_Player, const cClientHandle * a_Exclude)
 {
 	cCSLock Lock(m_CSLayers);
@@ -622,7 +606,7 @@ void cChunkMap::BroadcastParticleEffect(const AString & a_ParticleName, float a_
 	cCSLock Lock(m_CSLayers);
 	int ChunkX, ChunkZ;
 
-	cChunkDef::BlockToChunk((int) a_SrcX, (int) a_SrcZ, ChunkX, ChunkZ);
+	cChunkDef::BlockToChunk(FloorC(a_SrcX), FloorC(a_SrcZ), ChunkX, ChunkZ);
 	cChunkPtr Chunk = GetChunkNoGen(ChunkX, ChunkZ);
 	if (Chunk == nullptr)
 	{
@@ -658,7 +642,7 @@ void cChunkMap::BroadcastSoundEffect(const AString & a_SoundName, double a_X, do
 	cCSLock Lock(m_CSLayers);
 	int ChunkX, ChunkZ;
 
-	cChunkDef::BlockToChunk((int)std::floor(a_X), (int)std::floor(a_Z), ChunkX, ChunkZ);
+	cChunkDef::BlockToChunk(FloorC(std::floor(a_X)), FloorC(std::floor(a_Z)), ChunkX, ChunkZ);
 	cChunkPtr Chunk = GetChunkNoGen(ChunkX, ChunkZ);
 	if (Chunk == nullptr)
 	{
@@ -672,7 +656,7 @@ void cChunkMap::BroadcastSoundEffect(const AString & a_SoundName, double a_X, do
 
 
 
-void cChunkMap::BroadcastSoundParticleEffect(int a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data, const cClientHandle * a_Exclude)
+void cChunkMap::BroadcastSoundParticleEffect(const EffectID a_EffectID, int a_SrcX, int a_SrcY, int a_SrcZ, int a_Data, const cClientHandle * a_Exclude)
 {
 	cCSLock Lock(m_CSLayers);
 	int ChunkX, ChunkZ;
@@ -761,7 +745,7 @@ void cChunkMap::SendBlockEntity(int a_BlockX, int a_BlockY, int a_BlockZ, cClien
 
 
 
-void cChunkMap::UseBlockEntity(cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ)
+bool cChunkMap::UseBlockEntity(cPlayer * a_Player, int a_BlockX, int a_BlockY, int a_BlockZ)
 {
 	// a_Player rclked block entity at the coords specified, handle it
 	cCSLock Lock(m_CSLayers);
@@ -770,9 +754,9 @@ void cChunkMap::UseBlockEntity(cPlayer * a_Player, int a_BlockX, int a_BlockY, i
 	cChunkPtr Chunk = GetChunkNoGen(ChunkX, ChunkZ);
 	if ((Chunk == nullptr) || !Chunk->IsValid())
 	{
-		return;
+		return false;
 	}
-	Chunk->UseBlockEntity(a_Player, a_BlockX, a_BlockY, a_BlockZ);
+	return Chunk->UseBlockEntity(a_Player, a_BlockX, a_BlockY, a_BlockZ);
 }
 
 
@@ -833,7 +817,6 @@ void cChunkMap::WakeUpSimulators(int a_BlockX, int a_BlockY, int a_BlockZ)
 
 
 
-/// Wakes up the simulators for the specified area of blocks
 void cChunkMap::WakeUpSimulatorsInArea(int a_MinBlockX, int a_MaxBlockX, int a_MinBlockY, int a_MaxBlockY, int a_MinBlockZ, int a_MaxBlockZ)
 {
 	// Limit the Y coords:
@@ -1198,9 +1181,9 @@ void cChunkMap::SetBlocks(const sSetBlockVector & a_Blocks)
 
 void cChunkMap::CollectPickupsByPlayer(cPlayer & a_Player)
 {
-	int BlockX = (int)(a_Player.GetPosX());  // Truncating doesn't matter much; we're scanning entire chunks anyway
-	int BlockY = (int)(a_Player.GetPosY());
-	int BlockZ = (int)(a_Player.GetPosZ());
+	int BlockX = static_cast<int>(a_Player.GetPosX());  // Truncating doesn't matter much; we're scanning entire chunks anyway
+	int BlockY = static_cast<int>(a_Player.GetPosY());
+	int BlockZ = static_cast<int>(a_Player.GetPosZ());
 	int ChunkX = 0, ChunkZ = 0;
 	cChunkDef::AbsoluteToRelative(BlockX, BlockY, BlockZ, ChunkX, ChunkZ);
 	int OtherChunkX = ChunkX + ((BlockX > 8) ? 1 : -1);
@@ -1740,7 +1723,7 @@ void cChunkMap::AddEntity(cEntity * a_Entity)
 	)
 	{
 		LOGWARNING("Entity at %p (%s, ID %d) spawning in a non-existent chunk, the entity is lost.",
-			a_Entity, a_Entity->GetClass(), a_Entity->GetUniqueID()
+			static_cast<void *>(a_Entity), a_Entity->GetClass(), a_Entity->GetUniqueID()
 		);
 		return;
 	}
@@ -1761,7 +1744,7 @@ void cChunkMap::AddEntityIfNotPresent(cEntity * a_Entity)
 	)
 	{
 		LOGWARNING("Entity at %p (%s, ID %d) spawning in a non-existent chunk, the entity is lost.",
-			a_Entity, a_Entity->GetClass(), a_Entity->GetUniqueID()
+			static_cast<void *>(a_Entity), a_Entity->GetClass(), a_Entity->GetUniqueID()
 		);
 		return;
 	}
@@ -1844,10 +1827,10 @@ bool cChunkMap::ForEachEntityInChunk(int a_ChunkX, int a_ChunkZ, cEntityCallback
 bool cChunkMap::ForEachEntityInBox(const cBoundingBox & a_Box, cEntityCallback & a_Callback)
 {
 	// Calculate the chunk range for the box:
-	int MinChunkX = (int)floor(a_Box.GetMinX() / cChunkDef::Width);
-	int MinChunkZ = (int)floor(a_Box.GetMinZ() / cChunkDef::Width);
-	int MaxChunkX = (int)floor((a_Box.GetMaxX() + cChunkDef::Width) / cChunkDef::Width);
-	int MaxChunkZ = (int)floor((a_Box.GetMaxZ() + cChunkDef::Width) / cChunkDef::Width);
+	int MinChunkX = FloorC(a_Box.GetMinX() / cChunkDef::Width);
+	int MinChunkZ = FloorC(a_Box.GetMinZ() / cChunkDef::Width);
+	int MaxChunkX = FloorC((a_Box.GetMaxX() + cChunkDef::Width) / cChunkDef::Width);
+	int MaxChunkZ = FloorC((a_Box.GetMaxZ() + cChunkDef::Width) / cChunkDef::Width);
 	
 	// Iterate over each chunk in the range:
 	cCSLock Lock(m_CSLayers);
@@ -1876,7 +1859,7 @@ bool cChunkMap::ForEachEntityInBox(const cBoundingBox & a_Box, cEntityCallback &
 void cChunkMap::DoExplosionAt(double a_ExplosionSize, double a_BlockX, double a_BlockY, double a_BlockZ, cVector3iArray & a_BlocksAffected)
 {
 	// Don't explode if outside of Y range (prevents the following test running into unallocated memory):
-	if ((a_BlockY < 0) || (a_BlockY > cChunkDef::Height - 1))
+	if (!cChunkDef::IsValidHeight(FloorC(a_BlockY)))
 	{
 		return;
 	}
@@ -1884,26 +1867,26 @@ void cChunkMap::DoExplosionAt(double a_ExplosionSize, double a_BlockX, double a_
 	bool ShouldDestroyBlocks = true;
 
 	// Don't explode if the explosion center is inside a liquid block:
-	if (IsBlockLiquid(m_World->GetBlock((int)floor(a_BlockX), (int)floor(a_BlockY), (int)floor(a_BlockZ))))
+	if (IsBlockLiquid(m_World->GetBlock(FloorC(a_BlockX), FloorC(a_BlockY), FloorC(a_BlockZ))))
 	{
 		ShouldDestroyBlocks = false;
 	}
 
-	int ExplosionSizeInt = (int)ceil(a_ExplosionSize);
+	int ExplosionSizeInt = CeilC(a_ExplosionSize);
 	int ExplosionSizeSq = ExplosionSizeInt * ExplosionSizeInt;
 
-	int bx = (int)floor(a_BlockX);
-	int by = (int)floor(a_BlockY);
-	int bz = (int)floor(a_BlockZ);
+	int bx = FloorC(a_BlockX);
+	int by = FloorC(a_BlockY);
+	int bz = FloorC(a_BlockZ);
 
-	int MinY = std::max((int)floor(a_BlockY - ExplosionSizeInt), 0);
-	int MaxY = std::min((int)ceil(a_BlockY + ExplosionSizeInt), cChunkDef::Height - 1);
+	int MinY = std::max(FloorC(a_BlockY - ExplosionSizeInt), 0);
+	int MaxY = std::min(CeilC(a_BlockY + ExplosionSizeInt), cChunkDef::Height - 1);
 
 	if (ShouldDestroyBlocks)
 	{
 		cBlockArea area;
-		a_BlocksAffected.reserve(8 * ExplosionSizeInt * ExplosionSizeInt * ExplosionSizeInt);
-		if (!area.Read(m_World, bx - ExplosionSizeInt, (int)ceil(a_BlockX + ExplosionSizeInt), MinY, MaxY, bz - ExplosionSizeInt, (int)ceil(a_BlockZ + ExplosionSizeInt)))
+		a_BlocksAffected.reserve(8 * static_cast<size_t>(ExplosionSizeInt * ExplosionSizeInt * ExplosionSizeInt));
+		if (!area.Read(m_World, bx - ExplosionSizeInt, static_cast<int>(ceil(a_BlockX + ExplosionSizeInt)), MinY, MaxY, bz - ExplosionSizeInt, static_cast<int>(ceil(a_BlockZ + ExplosionSizeInt))))
 		{
 			return;
 		}
@@ -2033,7 +2016,7 @@ void cChunkMap::DoExplosionAt(double a_ExplosionSize, double a_BlockX, double a_
 				}
 
 				// Ensure that the damage dealt is inversely proportional to the distance to the TNT centre - the closer a player is, the harder they are hit
-				a_Entity->TakeDamage(dtExplosion, nullptr, (int)((1 / DistanceFromExplosion.Length()) * 6 * m_ExplosionSize), 0);
+				a_Entity->TakeDamage(dtExplosion, nullptr, static_cast<int>((1 / DistanceFromExplosion.Length()) * 6 * m_ExplosionSize), 0);
 			}
 
 			// Apply force to entities around the explosion - code modified from World.cpp DoExplosionAt()
@@ -2096,6 +2079,21 @@ bool cChunkMap::ForEachBlockEntityInChunk(int a_ChunkX, int a_ChunkZ, cBlockEnti
 		return false;
 	}
 	return Chunk->ForEachBlockEntity(a_Callback);
+}
+
+
+
+
+
+bool cChunkMap::ForEachBrewingstandInChunk(int a_ChunkX, int a_ChunkZ, cBrewingstandCallback & a_Callback)
+{
+	cCSLock Lock(m_CSLayers);
+	cChunkPtr Chunk = GetChunkNoGen(a_ChunkX, a_ChunkZ);
+	if ((Chunk == nullptr) || !Chunk->IsValid())
+	{
+		return false;
+	}
+	return Chunk->ForEachBrewingstand(a_Callback);
 }
 
 
@@ -2207,6 +2205,24 @@ bool cChunkMap::DoWithBeaconAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBeacon
 		return false;
 	}
 	return Chunk->DoWithBeaconAt(a_BlockX, a_BlockY, a_BlockZ, a_Callback);
+}
+
+
+
+
+
+bool cChunkMap::DoWithBrewingstandAt(int a_BlockX, int a_BlockY, int a_BlockZ, cBrewingstandCallback & a_Callback)
+{
+	int ChunkX, ChunkZ;
+	int BlockX = a_BlockX, BlockY = a_BlockY, BlockZ = a_BlockZ;
+	cChunkDef::AbsoluteToRelative(BlockX, BlockY, BlockZ, ChunkX, ChunkZ);
+	cCSLock Lock(m_CSLayers);
+	cChunkPtr Chunk = GetChunkNoGen(ChunkX, ChunkZ);
+	if ((Chunk == nullptr) || !Chunk->IsValid())
+	{
+		return false;
+	}
+	return Chunk->DoWithBrewingstandAt(a_BlockX, a_BlockY, a_BlockZ, a_Callback);
 }
 
 
@@ -2413,10 +2429,10 @@ void cChunkMap::PrepareChunk(int a_ChunkX, int a_ChunkZ, std::unique_ptr<cChunkC
 		return;
 	}
 
-	// The chunk is present and lit, just call the callback:
+	// The chunk is present and lit, just call the callback, report as success:
 	if (a_Callback != nullptr)
 	{
-		a_Callback->Call(a_ChunkX, a_ChunkZ);
+		a_Callback->Call(a_ChunkX, a_ChunkZ, true);
 	}
 }
 
@@ -2449,9 +2465,19 @@ bool cChunkMap::GenerateChunk(int a_ChunkX, int a_ChunkZ, cChunkCoordCallback * 
 			}
 
 			// cChunkCoordCallback override:
-			virtual void Call(int a_CBChunkX, int a_CBChunkZ) override
+			virtual void Call(int a_CBChunkX, int a_CBChunkZ, bool a_CBIsSuccess) override
 			{
-				// The chunk has been loaded or an error occurred, check if it's valid now:
+				// If success is reported, the chunk is already valid, no need to do anything else:
+				if (a_CBIsSuccess)
+				{
+					if (m_Callback != nullptr)
+					{
+						m_Callback->Call(a_CBChunkX, a_CBChunkZ, true);
+					}
+					return;
+				}
+
+				// The chunk failed to load, generate it:
 				cCSLock Lock(m_ChunkMap.m_CSLayers);
 				cChunkPtr CBChunk = m_ChunkMap.GetChunkNoLoad(a_CBChunkX, a_CBChunkZ);
 
@@ -2460,23 +2486,13 @@ bool cChunkMap::GenerateChunk(int a_ChunkX, int a_ChunkZ, cChunkCoordCallback * 
 					// An error occurred, but we promised to call the callback, so call it even when there's no real chunk data:
 					if (m_Callback != nullptr)
 					{
-						m_Callback->Call(a_CBChunkX, a_CBChunkZ);
+						m_Callback->Call(a_CBChunkX, a_CBChunkZ, false);
 					}
 					return;
 				}
 
-				// If the chunk is not valid, queue it in the generator:
-				if (!CBChunk->IsValid())
-				{
-					m_World.GetGenerator().QueueGenerateChunk(a_CBChunkX, a_CBChunkZ, false, m_Callback);
-					return;
-				}
-
-				// The chunk was loaded, call the callback:
-				if (m_Callback != nullptr)
-				{
-					m_Callback->Call(a_CBChunkX, a_CBChunkZ);
-				}
+				CBChunk->SetPresence(cChunk::cpQueued);
+				m_World.GetGenerator().QueueGenerateChunk(a_CBChunkX, a_CBChunkZ, false, m_Callback);
 			}
 
 		protected:
@@ -2491,7 +2507,7 @@ bool cChunkMap::GenerateChunk(int a_ChunkX, int a_ChunkZ, cChunkCoordCallback * 
 	// The chunk is valid, just call the callback:
 	if (a_Callback != nullptr)
 	{
-		a_Callback->Call(a_ChunkX, a_ChunkZ);
+		a_Callback->Call(a_ChunkX, a_ChunkZ, true);
 	}
 	return true;
 }
@@ -2587,6 +2603,34 @@ bool cChunkMap::ForEachChunkInRect(int a_MinChunkX, int a_MaxChunkX, int a_MinCh
 		}
 	}
 	return Result;
+}
+
+
+
+
+
+bool cChunkMap::ForEachLoadedChunk(std::function<bool(int, int)> a_Callback)
+{
+	cCSLock Lock(m_CSLayers);
+	for (cChunkLayerList::const_iterator itr = m_Layers.begin(); itr != m_Layers.end(); ++itr)  // iterate over ALL loaded layers
+	{
+		cChunkLayer * layer = *itr;
+		for (int x = 0; x < LAYER_SIZE; x++)
+		{
+			for (int z = 0; z < LAYER_SIZE; z++)
+			{
+				cChunkPtr p = layer->FindChunk(layer->GetX() * LAYER_SIZE + x, layer->GetZ() * LAYER_SIZE + z);
+				if ((p != nullptr) && p->IsValid())  // if chunk is loaded
+				{
+					if (a_Callback(p->GetPosX(), p->GetPosZ()))
+					{
+						return false;
+					}
+				}
+			}
+		}
+	}
+	return true;
 }
 
 

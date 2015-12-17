@@ -16,6 +16,7 @@
 #include "../Items/ItemHandler.h"
 #include "../Vector3.h"
 #include "../FastRandom.h"
+#include <cmath>
 
 #include "../WorldStorage/StatSerializer.h"
 #include "../CompositeChat.h"
@@ -54,9 +55,6 @@ cPlayer::cPlayer(cClientHandlePtr a_Client, const AString & a_PlayerName) :
 	m_FoodSaturationLevel(5.0),
 	m_FoodTickTimer(0),
 	m_FoodExhaustionLevel(0.0),
-	m_LastJumpHeight(0),
-	m_LastGroundHeight(0),
-	m_bTouchGround(false),
 	m_Stance(0.0),
 	m_Inventory(*this),
 	m_EnderChestContents(9, 3),
@@ -81,7 +79,7 @@ cPlayer::cPlayer(cClientHandlePtr a_Client, const AString & a_PlayerName) :
 	m_bDirtyExperience(false),
 	m_IsChargingBow(false),
 	m_BowCharge(0),
-	m_FloaterID(-1),
+	m_FloaterID(cEntity::INVALID_ID),
 	m_Team(nullptr),
 	m_TicksUntilNextSave(PLAYER_INVENTORY_SAVE_INTERVAL),
 	m_bIsTeleporting(false),
@@ -112,7 +110,6 @@ cPlayer::cPlayer(cClientHandlePtr a_Client, const AString & a_PlayerName) :
 		);
 	}
 
-	m_LastJumpHeight = static_cast<float>(GetPosY());
 	m_LastGroundHeight = static_cast<float>(GetPosY());
 	m_Stance = GetPosY() + 1.62;
 
@@ -151,7 +148,7 @@ cPlayer::~cPlayer(void)
 		LOGINFO("Player %s has left the game", GetName().c_str());
 	}
 
-	LOGD("Deleting cPlayer \"%s\" at %p, ID %d", GetName().c_str(), this, GetUniqueID());
+	LOGD("Deleting cPlayer \"%s\" at %p, ID %d", GetName().c_str(), static_cast<void *>(this), GetUniqueID());
 
 	// Notify the server that the player is being destroyed
 	cRoot::Get()->GetServer()->PlayerDestroying(this);
@@ -163,7 +160,7 @@ cPlayer::~cPlayer(void)
 	delete m_InventoryWindow;
 	m_InventoryWindow = nullptr;
 
-	LOGD("Player %p deleted", this);
+	LOGD("Player %p deleted", static_cast<void *>(this));
 }
 
 
@@ -205,6 +202,7 @@ void cPlayer::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 		if (m_ClientHandle->IsDestroyed())
 		{
 			// This should not happen, because destroying a client will remove it from the world, but just in case
+			ASSERT(!"Player ticked whilst in the process of destruction!");
 			m_ClientHandle = nullptr;
 			return;
 		}
@@ -214,6 +212,10 @@ void cPlayer::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 			// We're not yet in the game, ignore everything
 			return;
 		}
+	}
+	else
+	{
+		ASSERT(!"Player ticked whilst in the process of destruction!");
 	}
 
 	m_Stats.AddValue(statMinutesPlayed, 1);
@@ -238,23 +240,7 @@ void cPlayer::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 		SendExperience();
 	}
 
-	bool CanMove = true;
-	if (!GetPosition().EqualsEps(m_LastPos, 0.02))  // Non negligible change in position from last tick? 0.02 tp prevent continous calling while floating sometimes.
-	{
-		// Apply food exhaustion from movement:
-		ApplyFoodExhaustionFromMovement();
-
-		if (cRoot::Get()->GetPluginManager()->CallHookPlayerMoving(*this, m_LastPos, GetPosition()))
-		{
-			CanMove = false;
-			TeleportToCoords(m_LastPos.x, m_LastPos.y, m_LastPos.z);
-		}
-	}
-
-	if (CanMove)
-	{
-		BroadcastMovementUpdate(m_ClientHandle.get());
-	}
+	BroadcastMovementUpdate(m_ClientHandle.get());
 
 	if (m_Health > 0)  // make sure player is alive
 	{
@@ -281,11 +267,6 @@ void cPlayer::Tick(std::chrono::milliseconds a_Dt, cChunk & a_Chunk)
 	{
 		m_World->BroadcastPlayerListUpdatePing(*this);
 		m_LastPlayerListTime = std::chrono::steady_clock::now();
-	}
-
-	if (IsFlying())
-	{
-		m_LastGroundHeight = static_cast<float>(GetPosY());
 	}
 
 	if (m_TicksUntilNextSave == 0)
@@ -468,61 +449,11 @@ void cPlayer::SetTouchGround(bool a_bTouchGround)
 		return;
 	}
 
-	m_bTouchGround = a_bTouchGround;
-
-	if (!m_bTouchGround)
-	{
-		if (GetPosY() > m_LastJumpHeight)
-		{
-			m_LastJumpHeight = static_cast<float>(GetPosY());
-		}
-		cWorld * World = GetWorld();
-		if ((GetPosY() >= 0) && (GetPosY() < cChunkDef::Height))
-		{
-			BLOCKTYPE BlockType = World->GetBlock(POSX_TOINT, POSY_TOINT, POSZ_TOINT);
-			if (BlockType != E_BLOCK_AIR)
-			{
-				m_bTouchGround = true;
-			}
-			if (
-				(BlockType == E_BLOCK_WATER) ||
-				(BlockType == E_BLOCK_STATIONARY_WATER) ||
-				(BlockType == E_BLOCK_LADDER) ||
-				(BlockType == E_BLOCK_VINES)
-			)
-			{
-				m_LastGroundHeight = static_cast<float>(GetPosY());
-			}
-		}
-	}
-	else
-	{
-		float Dist = static_cast<float>(m_LastGroundHeight - floor(GetPosY()));
-
-		if (Dist >= 2.0)  // At least two blocks - TODO: Use m_LastJumpHeight instead of m_LastGroundHeight above
-		{
-			// Increment statistic
-			m_Stats.AddValue(statDistFallen, (StatValue)floor(Dist * 100 + 0.5));
-		}
-
-		int Damage = static_cast<int>(Dist - 3.f);
-		if (m_LastJumpHeight > m_LastGroundHeight)
-		{
-			Damage++;
-		}
-		m_LastJumpHeight = static_cast<float>(GetPosY());
-
-		if (Damage > 0)
-		{
-			// cPlayer makes sure damage isn't applied in creative, no need to check here
-			TakeDamage(dtFalling, nullptr, Damage, Damage, 0);
-
-			// Fall particles
-			GetWorld()->BroadcastSoundParticleEffect(2006, POSX_TOINT, static_cast<int>(GetPosY()) - 1, POSZ_TOINT, Damage /* Used as particle effect speed modifier */);
-		}
-
-		m_LastGroundHeight = static_cast<float>(GetPosY());
-	}
+	UNUSED(a_bTouchGround);
+	/* Unfortunately whatever the reason, there are still desyncs in on-ground status between the client and server. For example:
+		1. Walking off a ledge (whatever height)
+		2. Initial login
+	Thus, it is too risky to compare their value against ours and kick them for hacking */
 }
 
 
@@ -872,7 +803,7 @@ bool cPlayer::DoTakeDamage(TakeDamageInfo & a_TDI)
 
 	if ((a_TDI.Attacker != nullptr) && (a_TDI.Attacker->IsPlayer()))
 	{
-		cPlayer * Attacker = (cPlayer *)a_TDI.Attacker;
+		cPlayer * Attacker = reinterpret_cast<cPlayer *>(a_TDI.Attacker);
 
 		if ((m_Team != nullptr) && (m_Team == Attacker->m_Team))
 		{
@@ -890,7 +821,7 @@ bool cPlayer::DoTakeDamage(TakeDamageInfo & a_TDI)
 		AddFoodExhaustion(0.3f);
 		SendHealth();
 
-		m_Stats.AddValue(statDamageTaken, (StatValue)floor(a_TDI.FinalDamage * 10 + 0.5));
+		m_Stats.AddValue(statDamageTaken, FloorC<StatValue>(a_TDI.FinalDamage * 10 + 0.5));
 		return true;
 	}
 	return false;
@@ -920,11 +851,11 @@ void cPlayer::KilledBy(TakeDamageInfo & a_TDI)
 	{
 		Pickups.Add(cItem(E_ITEM_RED_APPLE));
 	}
-
-	m_Stats.AddValue(statItemsDropped, (StatValue)Pickups.Size());
+	m_Stats.AddValue(statItemsDropped, static_cast<StatValue>(Pickups.Size()));
 
 	m_World->SpawnItemPickups(Pickups, GetPosX(), GetPosY(), GetPosZ(), 10);
 	SaveToDisk();  // Save it, yeah the world is a tough place !
+	cPluginManager * PluginManager = cRoot::Get()->GetPluginManager();
 
 	if ((a_TDI.Attacker == nullptr) && m_World->ShouldBroadcastDeathMessages())
 	{
@@ -950,7 +881,12 @@ void cPlayer::KilledBy(TakeDamageInfo & a_TDI)
 			case dtExplosion: DamageText = "blew up"; break;
 			default: DamageText = "died, somehow; we've no idea how though"; break;
 		}
-		GetWorld()->BroadcastChatDeath(Printf("%s %s", GetName().c_str(), DamageText.c_str()));
+		AString DeathMessage = Printf("%s %s", GetName().c_str(), DamageText.c_str());
+		PluginManager->CallHookKilled(*this, a_TDI, DeathMessage);
+		if (DeathMessage != AString(""))
+		{
+			GetWorld()->BroadcastChatDeath(DeathMessage);
+		}
 	}
 	else if (a_TDI.Attacker == nullptr)  // && !m_World->ShouldBroadcastDeathMessages() by fallthrough
 	{
@@ -958,16 +894,24 @@ void cPlayer::KilledBy(TakeDamageInfo & a_TDI)
 	}
 	else if (a_TDI.Attacker->IsPlayer())
 	{
-		cPlayer * Killer = (cPlayer *)a_TDI.Attacker;
-
-		GetWorld()->BroadcastChatDeath(Printf("%s was killed by %s", GetName().c_str(), Killer->GetName().c_str()));
+		cPlayer * Killer = reinterpret_cast<cPlayer *>(a_TDI.Attacker);
+		AString DeathMessage = Printf("%s was killed by %s", GetName().c_str(), Killer->GetName().c_str());
+		PluginManager->CallHookKilled(*this, a_TDI, DeathMessage);
+		if (DeathMessage != AString(""))
+		{
+			GetWorld()->BroadcastChatDeath(DeathMessage);
+		}
 	}
 	else
 	{
 		AString KillerClass = a_TDI.Attacker->GetClass();
 		KillerClass.erase(KillerClass.begin());  // Erase the 'c' of the class (e.g. "cWitch" -> "Witch")
-
-		GetWorld()->BroadcastChatDeath(Printf("%s was killed by a %s", GetName().c_str(), KillerClass.c_str()));
+		AString DeathMessage = Printf("%s was killed by a %s", GetName().c_str(), KillerClass.c_str());
+		PluginManager->CallHookKilled(*this, a_TDI, DeathMessage);
+		if (DeathMessage != AString(""))
+		{
+			GetWorld()->BroadcastChatDeath(DeathMessage);
+		}
 	}
 
 	m_Stats.AddValue(statDeaths);
@@ -991,7 +935,7 @@ void cPlayer::Killed(cEntity * a_Victim)
 	}
 	else if (a_Victim->IsMob())
 	{
-		if (((cMonster *)a_Victim)->GetMobFamily() == cMonster::mfHostile)
+		if (reinterpret_cast<cMonster *>(a_Victim)->GetMobFamily() == cMonster::mfHostile)
 		{
 			AwardAchievement(achKillMonster);
 		}
@@ -1237,6 +1181,7 @@ void cPlayer::SetCapabilities()
 	if (IsGameModeSpectator())
 	{
 		SetVisible(false);
+		SetCanFly(true);
 	}
 	else
 	{
@@ -1274,7 +1219,7 @@ unsigned int cPlayer::AwardAchievement(const eStatistic a_Ach)
 
 	if (Old > 0)
 	{
-		return m_Stats.AddValue(a_Ach);
+		return static_cast<unsigned int>(m_Stats.AddValue(a_Ach));
 	}
 	else
 	{
@@ -1292,7 +1237,7 @@ unsigned int cPlayer::AwardAchievement(const eStatistic a_Ach)
 		// Achievement Get!
 		m_ClientHandle->SendStatistics(m_Stats);
 
-		return New;
+		return static_cast<unsigned int>(New);
 	}
 }
 
@@ -1303,11 +1248,10 @@ unsigned int cPlayer::AwardAchievement(const eStatistic a_Ach)
 void cPlayer::TeleportToCoords(double a_PosX, double a_PosY, double a_PosZ)
 {
 	//  ask plugins to allow teleport to the new position.
-	if (!cRoot::Get()->GetPluginManager()->CallHookEntityTeleport(*this, m_LastPos, Vector3d(a_PosX, a_PosY, a_PosZ)))
+	if (!cRoot::Get()->GetPluginManager()->CallHookEntityTeleport(*this, m_LastPosition, Vector3d(a_PosX, a_PosY, a_PosZ)))
 	{
 		SetPosition(a_PosX, a_PosY, a_PosZ);
 		m_LastGroundHeight = static_cast<float>(a_PosY);
-		m_LastJumpHeight = static_cast<float>(a_PosY);
 		m_bIsTeleporting = true;
 
 		m_World->BroadcastTeleportEntity(*this, GetClientHandle());
@@ -1375,37 +1319,6 @@ void cPlayer::DoSetSpeed(double a_SpeedX, double a_SpeedY, double a_SpeedZ)
 
 	// Send the speed to the client so he actualy moves
 	m_ClientHandle->SendEntityVelocity(*this);
-}
-
-
-
-
-
-void cPlayer::MoveTo( const Vector3d & a_NewPos)
-{
-	if ((a_NewPos.y < -990) && (GetPosY() > -100))
-	{
-		// When attached to an entity, the client sends position packets with weird coords:
-		// Y = -999 and X, Z = attempting to create speed, usually up to 0.03
-		// We cannot test m_AttachedTo, because when deattaching, the server thinks the client is already deattached while
-		// the client may still send more of these nonsensical packets.
-		if (m_AttachedTo != nullptr)
-		{
-			Vector3d AddSpeed(a_NewPos);
-			AddSpeed.y = 0;
-			m_AttachedTo->AddSpeed(AddSpeed);
-		}
-		return;
-	}
-
-	// TODO: should do some checks to see if player is not moving through terrain
-	// TODO: Official server refuses position packets too far away from each other, kicking "hacked" clients; we should, too
-
-	Vector3d DeltaPos = a_NewPos - GetPosition();
-	UpdateMovementStats(DeltaPos);
-
-	SetPosition( a_NewPos);
-	SetStance(a_NewPos.y + 1.62);
 }
 
 
@@ -1611,7 +1524,7 @@ void cPlayer::TossItems(const cItems & a_Items)
 		return;
 	}
 
-	m_Stats.AddValue(statItemsDropped, (StatValue)a_Items.Size());
+	m_Stats.AddValue(statItemsDropped, static_cast<StatValue>(a_Items.Size()));
 
 	double vX = 0, vY = 0, vZ = 0;
 	EulerToVector(-GetYaw(), GetPitch(), vZ, vX, vY);
@@ -1620,10 +1533,7 @@ void cPlayer::TossItems(const cItems & a_Items)
 }
 
 
-
-
-
-bool cPlayer::DoMoveToWorld(cWorld * a_World, bool a_ShouldSendRespawn)
+bool cPlayer::DoMoveToWorld(cWorld * a_World, bool a_ShouldSendRespawn, Vector3d a_NewPosition)
 {
 	ASSERT(a_World != nullptr);
 
@@ -1652,6 +1562,8 @@ bool cPlayer::DoMoveToWorld(cWorld * a_World, bool a_ShouldSendRespawn)
 	// Remove player from the old world
 	SetWorldTravellingFrom(GetWorld());  // cChunk handles entity removal
 	GetWorld()->RemovePlayer(this, false);
+
+	SetPosition(a_NewPosition);
 
 	// Queue adding player to the new world, including all the necessary adjustments to the object
 	a_World->AddPlayer(this);
@@ -1763,18 +1675,18 @@ bool cPlayer::LoadFromFile(const AString & a_FileName, cWorldPtr & a_World)
 	Json::Value & JSON_PlayerPosition = root["position"];
 	if (JSON_PlayerPosition.size() == 3)
 	{
-		SetPosX(JSON_PlayerPosition[(unsigned)0].asDouble());
-		SetPosY(JSON_PlayerPosition[(unsigned)1].asDouble());
-		SetPosZ(JSON_PlayerPosition[(unsigned)2].asDouble());
-		m_LastPos = GetPosition();
+		SetPosX(JSON_PlayerPosition[0].asDouble());
+		SetPosY(JSON_PlayerPosition[1].asDouble());
+		SetPosZ(JSON_PlayerPosition[2].asDouble());
+		m_LastPosition = GetPosition();
 	}
 
 	Json::Value & JSON_PlayerRotation = root["rotation"];
 	if (JSON_PlayerRotation.size() == 3)
 	{
-		SetYaw      (static_cast<float>(JSON_PlayerRotation[(unsigned)0].asDouble()));
-		SetPitch    (static_cast<float>(JSON_PlayerRotation[(unsigned)1].asDouble()));
-		SetRoll     (static_cast<float>(JSON_PlayerRotation[(unsigned)2].asDouble()));
+		SetYaw      (static_cast<float>(JSON_PlayerRotation[0].asDouble()));
+		SetPitch    (static_cast<float>(JSON_PlayerRotation[1].asDouble()));
+		SetRoll     (static_cast<float>(JSON_PlayerRotation[2].asDouble()));
 	}
 
 	m_Health              = root.get("health",         0).asInt();
@@ -1787,7 +1699,7 @@ bool cPlayer::LoadFromFile(const AString & a_FileName, cWorldPtr & a_World)
 	m_CurrentXp           = root.get("xpCurrent",      0).asInt();
 	m_IsFlying            = root.get("isflying",       0).asBool();
 
-	m_GameMode = (eGameMode) root.get("gamemode", eGameMode_NotSet).asInt();
+	m_GameMode = static_cast<eGameMode>(root.get("gamemode", eGameMode_NotSet).asInt());
 
 	if (m_GameMode == eGameMode_Creative)
 	{
@@ -1930,7 +1842,7 @@ void cPlayer::UseEquippedItem(int a_Amount)
 
 	// If the item has an unbreaking enchantment, give it a random chance of not breaking:
 	cItem Item = GetEquippedItem();
-	int UnbreakingLevel = Item.m_Enchantments.GetLevel(cEnchantments::enchUnbreaking);
+	int UnbreakingLevel = static_cast<int>(Item.m_Enchantments.GetLevel(cEnchantments::enchUnbreaking));
 	if (UnbreakingLevel > 0)
 	{
 		int chance;
@@ -1950,7 +1862,7 @@ void cPlayer::UseEquippedItem(int a_Amount)
 		}
 	}
 
-	if (GetInventory().DamageEquippedItem(a_Amount))
+	if (GetInventory().DamageEquippedItem(static_cast<Int16>(a_Amount)))
 	{
 		m_World->BroadcastSoundEffect("random.break", GetPosX(), GetPosY(), GetPosZ(), 0.5f, static_cast<float>(0.75 + (static_cast<float>((GetUniqueID() * 23) % 32)) / 64));
 	}
@@ -2084,17 +1996,28 @@ bool cPlayer::IsClimbing(void) const
 
 
 
-void cPlayer::UpdateMovementStats(const Vector3d & a_DeltaPos)
+void cPlayer::UpdateMovementStats(const Vector3d & a_DeltaPos, bool a_PreviousIsOnGround)
 {
-	StatValue Value = (StatValue)floor(a_DeltaPos.Length() * 100 + 0.5);
+	if (m_bIsTeleporting)
+	{
+		m_bIsTeleporting = false;
+		return;
+	}
 
+	StatValue Value = FloorC<StatValue>(a_DeltaPos.Length() * 100 + 0.5);
 	if (m_AttachedTo == nullptr)
 	{
+		if (IsFlying())
+		{
+			m_Stats.AddValue(statDistFlown, Value);
+			// May be flying and doing any of the following:
+		}
+
 		if (IsClimbing())
 		{
 			if (a_DeltaPos.y > 0.0)  // Going up
 			{
-				m_Stats.AddValue(statDistClimbed, (StatValue)floor(a_DeltaPos.y * 100 + 0.5));
+				m_Stats.AddValue(statDistClimbed, FloorC<StatValue>(a_DeltaPos.y * 100 + 0.5));
 			}
 		}
 		else if (IsSubmerged())
@@ -2110,14 +2033,22 @@ void cPlayer::UpdateMovementStats(const Vector3d & a_DeltaPos)
 		else if (IsOnGround())
 		{
 			m_Stats.AddValue(statDistWalked, Value);
-			AddFoodExhaustion((m_IsSprinting ? 0.001 : 0.0001) * static_cast<double>(Value));
+			AddFoodExhaustion((IsSprinting() ? 0.001 : 0.0001) * static_cast<double>(Value));
 		}
 		else
 		{
-			if (Value >= 25)  // Ignore small / slow movement
+			// If a jump just started, process food exhaustion:
+			if ((a_DeltaPos.y > 0.0) && a_PreviousIsOnGround)
 			{
-				m_Stats.AddValue(statDistFlown, Value);
+				m_Stats.AddValue(statJumps, 1);
+				AddFoodExhaustion((IsSprinting() ? 0.008 : 0.002) * static_cast<double>(Value));
 			}
+			else if (a_DeltaPos.y < 0.0)
+			{
+				// Increment statistic
+				m_Stats.AddValue(statDistFallen, static_cast<StatValue>(std::abs(a_DeltaPos.y) * 100 + 0.5));
+			}
+			// TODO: good opportunity to detect illegal flight (check for falling tho)
 		}
 	}
 	else
@@ -2128,7 +2059,7 @@ void cPlayer::UpdateMovementStats(const Vector3d & a_DeltaPos)
 			case cEntity::etBoat:     m_Stats.AddValue(statDistBoat,     Value); break;
 			case cEntity::etMonster:
 			{
-				cMonster * Monster = (cMonster *)m_AttachedTo;
+				cMonster * Monster = reinterpret_cast<cMonster *>(m_AttachedTo);
 				switch (Monster->GetMobType())
 				{
 					case mtPig:   m_Stats.AddValue(statDistPig,   Value); break;
@@ -2140,61 +2071,6 @@ void cPlayer::UpdateMovementStats(const Vector3d & a_DeltaPos)
 			default: break;
 		}
 	}
-}
-
-
-
-
-
-void cPlayer::ApplyFoodExhaustionFromMovement()
-{
-	if (IsGameModeCreative() || IsGameModeSpectator())
-	{
-		return;
-	}
-
-	// If we have just teleported, apply no exhaustion
-	if (m_bIsTeleporting)
-	{
-		m_bIsTeleporting = false;
-		return;
-	}
-
-	// If riding anything, apply no food exhaustion
-	if (m_AttachedTo != nullptr)
-	{
-		return;
-	}
-
-	// Process exhaustion every two ticks as that is how frequently m_LastPos is updated
-	// Otherwise, we apply exhaustion for a 'movement' every tick, one of which is an already processed value
-	if (GetWorld()->GetWorldAge() % 2 != 0)
-	{
-		return;
-	}
-
-	// Calculate the distance travelled, update the last pos:
-	Vector3d Movement(GetPosition() - m_LastPos);
-	Movement.y = 0;  // Only take XZ movement into account
-
-	// Apply the exhaustion based on distance travelled:
-	double BaseExhaustion = Movement.Length();
-	if (IsSprinting())
-	{
-		// 0.1 pt per meter sprinted
-		BaseExhaustion = BaseExhaustion * 0.1;
-	}
-	else if (IsSwimming())
-	{
-		// 0.015 pt per meter swum
-		BaseExhaustion = BaseExhaustion * 0.015;
-	}
-	else
-	{
-		// 0.01 pt per meter walked / sneaked
-		BaseExhaustion = BaseExhaustion * 0.01;
-	}
-	m_FoodExhaustionLevel += BaseExhaustion;
 }
 
 

@@ -36,7 +36,7 @@ public:
 
 	BLOCKENTITY_PROTODEF(cNoteEntity)
 	
-	/// Creates a new note entity. a_World may be nullptr
+	/** Creates a new note entity. a_World may be nullptr */
 	cNoteEntity(int a_X, int a_Y, int a_Z, cWorld * a_World);
 	virtual ~cNoteEntity() {}
 
@@ -49,7 +49,7 @@ public:
 	
 	// tolua_end
 	
-	virtual void UsedBy(cPlayer * a_Player) override;
+	virtual bool UsedBy(cPlayer * a_Player) override;
 	virtual void SendTo(cClientHandle &) override {}
 	
 	virtual void SetRedstonePower(bool a_Value) override
