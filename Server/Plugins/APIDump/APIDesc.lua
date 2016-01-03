@@ -1372,53 +1372,6 @@ local Item5 = cItem(E_ITEM_DIAMOND_CHESTPLATE, 1, 0, "thorns=1;unbreaking=3");
 			},
 		},  -- cItem
 
-		cObjective =
-		{
-			Desc = [[
-				This class represents a single scoreboard objective.
-			]],
-			Functions =
-			{
-				AddScore = { Params = "string, number", Return = "Score", Notes = "Adds a value to the score of the specified player and returns the new value." },
-				GetDisplayName = { Params = "", Return = "string", Notes = "Returns the display name of the objective. This name will be shown to the connected players." },
-				GetName = { Params = "", Return = "string", Notes = "Returns the internal name of the objective." },
-				GetScore = { Params = "string", Return = "Score", Notes = "Returns the score of the specified player." },
-				GetType = { Params = "", Return = "eType", Notes = "Returns the type of the objective. (i.e what is being tracked)" },
-				Reset = { Params = "", Return = "", Notes = "Resets the scores of the tracked players." },
-				ResetScore = { Params = "string", Return = "", Notes = "Reset the score of the specified player." },
-				SetDisplayName = { Params = "string", Return = "", Notes = "Sets the display name of the objective." },
-				SetScore = { Params = "string, Score", Return = "", Notes = "Sets the score of the specified player." },
-				SubScore = { Params = "string, number", Return = "Score", Notes = "Subtracts a value from the score of the specified player and returns the new value." },
-			},
-			Constants =
-			{
-				otAchievement = { Notes = "" },
-				otDeathCount = { Notes = "" },
-				otDummy = { Notes = "" },
-				otHealth = { Notes = "" },
-				otPlayerKillCount = { Notes = "" },
-				otStat = { Notes = "" },
-				otStatBlockMine = { Notes = "" },
-				otStatEntityKill = { Notes = "" },
-				otStatEntityKilledBy = { Notes = "" },
-				otStatItemBreak = { Notes = "" },
-				otStatItemCraft = { Notes = "" },
-				otStatItemUse = { Notes = "" },
-				otTotalKillCount = { Notes = "" },
-			},
-		}, -- cObjective
-
-		cPainting =
-		{
-			Desc = "This class represents a painting in the world. These paintings are special and different from Vanilla in that they can be critical-hit.",
-			Functions =
-			{
-				GetDirection = { Params = "", Return = "number", Notes = "Returns the direction the painting faces. Directions: ZP - 0, ZM - 2, XM - 1, XP - 3. Note that these are not the BLOCK_FACE constants." },
-				GetName = { Params = "", Return = "string", Notes = "Returns the name of the painting" },
-			},
-
-		}, -- cPainting
-
 		cItemGrid =
 		{
 			Desc = [[This class represents a 2D array of items. It is used as the underlying storage and API for all cases that use a grid of items:
@@ -1555,6 +1508,65 @@ end
 				ContainsType = { Params = "{{cItem|cItem}}", Return = "bool", Notes = "Returns true if the collection contains an item that is the same type as the parameter" },
 			},
 		},  -- cItems
+
+		cJson =
+		{
+			Desc = [[
+				Exposes the Json parser and serializer available in the server. Plugins can parse Json strings into
+				Lua tables, and serialize Lua tables into Json strings easily.
+			]],
+			Functions =
+			{
+				Parse = { Params = "string", Return = "table", Notes = "Parses the Json in the input string into a Lua table. Returns nil and detailed error message if parsing fails." },
+				Serialize = { Params = "table, [options]", Return = "string", Notes = "Serializes the input table into a Json string. The options table, if present, is used to adjust the formatting of the serialized string, see below for details." },
+			},
+			AdditionalInfo =
+			{
+				{
+					Header = "Serializer options",
+					Contents = [[
+						The "options" parameter given to the cJson:Serialize() function is a dictionary-table of "option
+						name" -> "option value". The serializer warns if any unknown options are used; the following
+						options are recognized:</p>
+						<ul>
+						<li><b>commentStyle</b> - either "All" or "None", specifies whether comments are written to the
+						output. Currently unused since comments cannot be represented in a Lua table</li>
+						<li><b>indentation</b> - the string that is repeated for each level of indentation of the output.
+						If empty, the Json is compressed (without linebreaks).</li>
+						<li><b>enableYAMLCompatibility</b> - bool manipulating the whitespace around the colons.</li>
+						<li><b>dropNullPlaceholders</b> - bool specifying whether null placeholders should be dropped
+						from the output</li>
+						</ul>
+					]],
+				},
+				{
+					Header = "Code example: Parsing a Json string",
+					Contents = [==[
+						The following code, adapted from the Debuggers plugin, parses a simple Json string and verifies
+						the results:
+<pre class="prettyprint lang-lua">
+local t1 = cJson:Parse([[{"a": 1, "b": "2", "c": [3, "4", 5]}]])
+assert(t1.a == 1)
+assert(t1.b == "2")
+assert(t1.c[1] == 3)
+assert(t1.c[2] == "4")
+assert(t1.c[3] == 5)
+</pre>
+					]==],
+				},
+				{
+					Header = "Code example: Serializing into a Json string",
+					Contents = [==[
+						The following code, adapted from the Debuggers plugin, serializes a simple Lua table into a
+						string, using custom indentation:
+<pre class="prettyprint lang-lua">
+local s1 = cJson:Serialize({a = 1, b = "2", c = {3, "4", 5}}, {indentation = "  "})
+LOG("Serialization result: " .. (s1 or "<nil>"))
+</pre>
+					]==],
+				},
+			},
+		},  -- cJson
 
 		cLuaWindow =
 		{
@@ -1813,6 +1825,52 @@ a_Player:OpenWindow(Window);
 			Inherits = "cPawn",
 		},  -- cMonster
 
+		cObjective =
+		{
+			Desc = [[
+				This class represents a single scoreboard objective.
+			]],
+			Functions =
+			{
+				AddScore = { Params = "string, number", Return = "Score", Notes = "Adds a value to the score of the specified player and returns the new value." },
+				GetDisplayName = { Params = "", Return = "string", Notes = "Returns the display name of the objective. This name will be shown to the connected players." },
+				GetName = { Params = "", Return = "string", Notes = "Returns the internal name of the objective." },
+				GetScore = { Params = "string", Return = "Score", Notes = "Returns the score of the specified player." },
+				GetType = { Params = "", Return = "eType", Notes = "Returns the type of the objective. (i.e what is being tracked)" },
+				Reset = { Params = "", Return = "", Notes = "Resets the scores of the tracked players." },
+				ResetScore = { Params = "string", Return = "", Notes = "Reset the score of the specified player." },
+				SetDisplayName = { Params = "string", Return = "", Notes = "Sets the display name of the objective." },
+				SetScore = { Params = "string, Score", Return = "", Notes = "Sets the score of the specified player." },
+				SubScore = { Params = "string, number", Return = "Score", Notes = "Subtracts a value from the score of the specified player and returns the new value." },
+			},
+			Constants =
+			{
+				otAchievement = { Notes = "" },
+				otDeathCount = { Notes = "" },
+				otDummy = { Notes = "" },
+				otHealth = { Notes = "" },
+				otPlayerKillCount = { Notes = "" },
+				otStat = { Notes = "" },
+				otStatBlockMine = { Notes = "" },
+				otStatEntityKill = { Notes = "" },
+				otStatEntityKilledBy = { Notes = "" },
+				otStatItemBreak = { Notes = "" },
+				otStatItemCraft = { Notes = "" },
+				otStatItemUse = { Notes = "" },
+				otTotalKillCount = { Notes = "" },
+			},
+		}, -- cObjective
+
+		cPainting =
+		{
+			Desc = "This class represents a painting in the world. These paintings are special and different from Vanilla in that they can be critical-hit.",
+			Functions =
+			{
+				GetDirection = { Params = "", Return = "number", Notes = "Returns the direction the painting faces. Directions: ZP - 0, ZM - 2, XM - 1, XP - 3. Note that these are not the BLOCK_FACE constants." },
+				GetName = { Params = "", Return = "string", Notes = "Returns the name of the painting" },
+			},
+		}, -- cPainting
+
 		cPawn =
 		{
 			Desc = [[cPawn is a controllable pawn object, controlled by either AI or a player. cPawn inherits all functions and members of {{cEntity}}
@@ -1870,6 +1928,7 @@ a_Player:OpenWindow(Window);
 				Feed = { Params = "AddFood, AddSaturation", Return = "bool", Notes = "Tries to add the specified amounts to food level and food saturation level (only positive amounts expected). Returns true if player was hungry and the food was consumed, false if too satiated." },
 				FoodPoison = { Params = "NumTicks", Return = "", Notes = "Starts the food poisoning for the specified amount of ticks; if already foodpoisoned, sets FoodPoisonedTicksRemaining to the larger of the two" },
 				ForceSetSpeed = { Params = "{{Vector3d|Direction}}", Notes = "Forces the player to move to the given direction." },
+				Freeze = { Params = "{{Vector3d|Location}}", Return = "", Notes = "Teleports the player to \"Location\" and prevents them from moving, locking them in place until unfreeze() is called" },
 				GetClientHandle = { Params = "", Return = "{{cClientHandle}}", Notes = "Returns the client handle representing the player's connection. May be nil (AI players)." },
 				GetColor = { Return = "string", Notes = "Returns the full color code to be used for this player's messages (based on their rank). Prefix player messages with this code." },
 				GetCurrentXp = { Params = "", Return = "number", Notes = "Returns the current amount of XP" },
@@ -1885,6 +1944,7 @@ a_Player:OpenWindow(Window);
 				GetFoodPoisonedTicksRemaining = { Params = "", Return = "", Notes = "Returns the number of ticks left for the food posoning effect" },
 				GetFoodSaturationLevel = { Params = "", Return = "number", Notes = "Returns the food saturation (overcharge of the food level, is depleted before food level)" },
 				GetFoodTickTimer = { Params = "", Return = "", Notes = "Returns the number of ticks past the last food-based heal or damage action; when this timer reaches 80, a new heal / damage is applied." },
+				GetFrozenDuration = { Params = "", Return = "number", Notes = "Returns the number of ticks since the player was frozen" },
 				GetGameMode = { Return = "{{Globals#GameMode|GameMode}}", Notes = "Returns the player's gamemode. The player may have their gamemode unassigned, in which case they inherit the gamemode from the current {{cWorld|world}}.<br /> <b>NOTE:</b> Instead of comparing the value returned by this function to the gmXXX constants, use the IsGameModeXXX() functions. These functions handle the gamemode inheritance automatically."},
 				GetIP = { Return = "string", Notes = "Returns the IP address of the player, if available. Returns an empty string if there's no IP to report."},
 				GetInventory = { Return = "{{cInventory|Inventory}}", Notes = "Returns the player's inventory"},
@@ -1917,6 +1977,7 @@ a_Player:OpenWindow(Window);
 				IsGameModeSurvival = { Params = "", Return = "bool", Notes = "Returns true if the player is in the gmSurvival gamemode, or has their gamemode unset and the world is a gmSurvival world." },
 				IsInBed = { Params = "", Return = "bool", Notes = "Returns true if the player is currently lying in a bed." },
 				IsSatiated = { Params = "", Return = "bool", Notes = "Returns true if the player is satiated (cannot eat)." },
+				IsFrozen = { Params = "", Return = "bool", Notes = "Returns true if the player is frozen. See Freeze()" },
 				IsVisible = { Params = "", Return = "bool", Notes = "Returns true if the player is visible to other players" },
 				LoadRank = { Params = "", Return = "", Notes = "Reloads the player's rank, message visuals and permissions from the {{cRankManager}}, based on the player's current rank." },
 				MoveTo = { Params = "{{Vector3d|NewPosition}}", Return = "Tries to move the player into the specified position." },
@@ -1959,6 +2020,7 @@ a_Player:OpenWindow(Window);
 				TossEquippedItem = { Params = "[Amount]", Return = "", Notes = "Tosses the item that the player has selected in their hotbar. Amount defaults to 1." },
 				TossHeldItem = { Params = "[Amount]", Return = "", Notes = "Tosses the item held by the cursor, then the player is in a UI window. Amount defaults to 1." },
 				TossPickup = { Params = "{{cItem|Item}}", Return = "", Notes = "Tosses a pickup newly created from the specified item." },
+				Unfreeze = { Params = "", Return = "", Notes = "Allows the player to move again, canceling the effects of Freeze()" },
 				XpForLevel = { Params = "XPLevel", Return = "number", Notes = "(STATIC) Returns the total amount of XP needed for the specified XP level. Inverse of CalcLevelFromXp()." },
 			},
 			Constants =
@@ -2228,7 +2290,50 @@ local CompressedString = cStringCompression.CompressStringGZIP("DataToCompress")
 				SetFuseTicks = { Return = "number", Notes = "Set the fuse ticks until the tnt will explode." },
 			},
 			Inherits = "cEntity",
-		},
+		},  -- cTNTEntity
+
+		cUrlParser =
+		{
+			Desc = [[
+			Provides a parser for generic URLs that returns the individual components of the URL.</p>
+			<p>
+			Note that all functions are static. Call them by using "cUrlParser:Parse(...)" etc.
+			]],
+			Functions =
+			{
+				GetDefaultPort = { Params = "Scheme", Return = "number", Notes = "(STATIC) Returns the default port that should be used for the given scheme (protocol). Returns zero if the scheme is not known." },
+				IsKnownScheme = { Params = "Scheme", Return = "bool", Notes = "(STATIC) Returns true if the scheme (protocol) is recognized by the parser." },
+				Parse = { Params = "URL", Return = "Scheme, Username, Password, Host, Port, Path, Query, Fragment", Notes = "(STATIC) Returns the individual parts of the URL. Parts that are not explicitly specified in the URL are empty, the default port for the scheme is used. If parsing fails, the function returns nil and an error message." },
+				ParseAuthorityPart = { Params = "AuthPart", Return = "Username, Password, Host, Port", Notes = "(STATIC) Parses the Authority part of the URL. Parts that are not explicitly specified in the AuthPart are returned empty, the port is returned zero. If parsing fails, the function returns nil and an error message." },
+			},
+			AdditionalInfo =
+			{
+				{
+					Header = "Code example",
+					Contents = [==[
+						The following code fragment uses the cUrlParser to parse an URL string into its components, and
+						prints those components out:
+<pre class="prettyprint lang-lua">
+local Scheme, Username, Password, Host, Port, Path, Query, Fragment = cUrlParser:Parse(
+	"http://anonymous:user@example.com@ftp.cuberite.org:9921/releases/2015/?sort=date#files"
+)
+if not(Scheme) then
+	LOG("  Error: " .. (username or "<nil>"))
+else
+	LOG("  Scheme   = " .. Scheme)    -- "http"
+	LOG("  Username = " .. Username)  -- "anonymous"
+	LOG("  Password = " .. Password)  -- "user@example.com"
+	LOG("  Host     = " .. Host)      -- "ftp.cuberite.org"
+	LOG("  Port     = " .. Port)      -- 9921
+	LOG("  Path     = " .. Path)      -- "releases/2015/"
+	LOG("  Query    = " .. Query)     -- "sort=date"
+	LOG("  Fragment = " .. Fragment)  -- "files"
+end
+</pre>
+					]==],
+				},
+			},
+		},  -- cUrlParser
 
 		cWebPlugin =
 		{
@@ -2327,7 +2432,7 @@ local CompressedString = cStringCompression.CompressStringGZIP("DataToCompress")
 				BroadcastChatSuccess = { Params = "Message, [{{cClientHandle|ExcludeClient}}]", Return = "", Notes = "Prepends Green [INFO] / colours entire text (depending on ShouldUseChatPrefixes()) and broadcasts message. For success messages." },
 				BroadcastChatWarning = { Params = "Message, [{{cClientHandle|ExcludeClient}}]", Return = "", Notes = "Prepends Rose [WARN] / colours entire text (depending on ShouldUseChatPrefixes()) and broadcasts message. For concerning events, such as plugin reload etc." },
 				BroadcastEntityAnimation = { Params = "{{cEntity|TargetEntity}}, Animation, [{{cClientHandle|ExcludeClient}}]", Return = "", Notes = "Sends an animation of an entity to all clienthandles (except ExcludeClient if given)" },
-				BroadcastParticleEffect = { Params = "ParticleName, X, Y, Z, OffSetX, OffSetY, OffSetZ, ParticleData, ParticleAmmount, [{{cClientHandle|ExcludeClient}}]", Return = "", Notes = "Spawns the specified particles to all players in the world exept the optional ExeptClient. A list of available particles by thinkofdeath can be found {{https://gist.github.com/thinkofdeath/5110835|Here}}" },
+				BroadcastParticleEffect = { Params = "ParticleName, X, Y, Z, OffSetX, OffSetY, OffSetZ, ParticleData, ParticleAmount, [{{cClientHandle|ExcludeClient}}]", Return = "", Notes = "Spawns the specified particles to all players in the world exept the optional ExeptClient. A list of available particles by thinkofdeath can be found {{https://gist.github.com/thinkofdeath/5110835|Here}}" },
 				BroadcastSoundEffect = { Params = "SoundName, X, Y, Z, Volume, Pitch, [{{cClientHandle|ExcludeClient}}]", Return = "", Notes = "Sends the specified sound effect to all players in this world, except the optional ExceptClient" },
 				BroadcastSoundParticleEffect = { Params = "EffectID, X, Y, Z, EffectData, [{{cClientHandle|ExcludeClient}}]", Return = "", Notes = "Sends the specified effect to all players in this world, except the optional ExceptClient" },
 				CastThunderbolt = { Params = "X, Y, Z", Return = "", Notes = "Creates a thunderbolt at the specified coords" },
@@ -2858,6 +2963,18 @@ end
 				TrimString = {Params = "string", Return = "string", Notes = "Trims whitespace at both ends of the string"},
 				md5 = {Params = "string", Return = "string", Notes = "<b>OBSOLETE</b>, use the {{cCryptoHash}} functions instead.<br>Converts a string to a raw binary md5 hash."},
 			},
+			Constants =
+			{
+				esBed = { Notes = "A bed explosion. The SourceData param is the {{Vector3i|position}} of the bed." },
+				esEnderCrystal = { Notes = "An ender crystal entity explosion. The SourceData param is the {{cEntity|ender crystal entity}} object." },
+				esGhastFireball = { Notes = "A ghast fireball explosion. The SourceData param is the {{cGhastFireballEntity|ghast fireball entity}} object." },
+				esMonster = { Notes = "A monster explosion (creeper). The SourceData param is the {{cMonster|monster entity}} object." },
+				esOther = { Notes = "Any other explosion. The SourceData param is unused." },
+				esPlugin = { Notes = "An explosion started by a plugin, without any further information. The SourceData param is unused. "},
+				esPrimedTNT = { Notes = "A TNT explosion. The SourceData param is the {{cTNTEntity|TNT entity}} object."},
+				esWitherBirth = { Notes = "An explosion at a wither's birth. The SourceData param is the {{cMonster|wither entity}} object." },
+				esWitherSkull = { Notes = "A wither skull explosion. The SourceData param is the {{cWitherSkullEntity|wither skull entity}} object." },
+			},
 			ConstantGroups =
 			{
 				BlockTypes =
@@ -2961,7 +3078,7 @@ end
 						These constants are used to differentiate the various sources of explosions. They are used in
 						the {{OnExploded|HOOK_EXPLODED}} hook, {{OnExploding|HOOK_EXPLODING}} hook and in the
 						{{cWorld}}:DoExplosionAt() function. These constants also dictate the type of the additional
-						data provided with the explosions, such as the exploding {{cCreeper|creeper}} entity or the
+						data provided with the explosions, such as the exploding creeper {{cEntity|entity}} or the
 						{{Vector3i|coords}} of the exploding bed.
 					]],
 				},
@@ -3037,6 +3154,7 @@ end
 		"cHopperEntity.__cBlockEntityWindowOwner__",
 		"cLuaWindow.__cItemGrid__cListener__",
 		"Globals._CuberiteInternal_.*",  -- Ignore all internal Cuberite constants
+		"Globals.esMax",
 	},
 
 	IgnoreVariables =

@@ -1,14 +1,15 @@
 
 // Stubs.cpp
 
-// Implements stubs of various MCServer methods that are needed for linking but not for runtime
-// This is required so that we don't bring in the entire MCServer via dependencies
+// Implements stubs of various Cuberite methods that are needed for linking but not for runtime
+// This is required so that we don't bring in the entire Cuberite via dependencies
 
 #include "Globals.h"
 #include "BlockInfo.h"
 #include "SelfTests.h"
 #include "Bindings.h"
 #include "Bindings/DeprecatedBindings.h"
+#include "Bindings/LuaJson.h"
 #include "Bindings/ManualBindings.h"
 #include "BlockEntities/BlockEntity.h"
 #include "Blocks/BlockHandler.h"
@@ -42,6 +43,14 @@ void cManualBindings::Bind(lua_State * a_LuaState)
 
 
 void DeprecatedBindings::Bind(lua_State * a_LuaState)
+{
+}
+
+
+
+
+
+void cLuaJson::Bind(cLuaState & a_LuaState)
 {
 }
 

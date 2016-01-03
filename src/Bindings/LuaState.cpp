@@ -16,6 +16,7 @@ extern "C"
 #include "Bindings.h"
 #include "ManualBindings.h"
 #include "DeprecatedBindings.h"
+#include "LuaJson.h"
 #include "../Entities/Entity.h"
 #include "../BlockEntities/BlockEntity.h"
 
@@ -180,6 +181,7 @@ void cLuaState::RegisterAPILibs(void)
 	tolua_AllToLua_open(m_LuaState);
 	cManualBindings::Bind(m_LuaState);
 	DeprecatedBindings::Bind(m_LuaState);
+	cLuaJson::Bind(*this);
 	luaopen_lsqlite3(m_LuaState);
 	luaopen_lxp(m_LuaState);
 }
@@ -807,25 +809,6 @@ void cLuaState::Push(UInt32 a_Value)
 
 
 
-void cLuaState::Push(void * a_Ptr)
-{
-	UNUSED(a_Ptr);
-	ASSERT(IsValid());
-
-	// Investigate the cause of this - what is the callstack?
-	// One code path leading here is the OnHookExploding / OnHookExploded with exotic parameters. Need to decide what to do with them
-	LOGWARNING("Lua engine: attempting to push a plain pointer, pushing nil instead.");
-	LOGWARNING("This indicates an unimplemented part of MCS bindings");
-	LogStackTrace();
-	
-	lua_pushnil(m_LuaState);
-	m_NumCurrentFunctionArgs += 1;
-}
-
-
-
-
-
 void cLuaState::Push(std::chrono::milliseconds a_Value)
 {
 	ASSERT(IsValid());
@@ -833,20 +816,6 @@ void cLuaState::Push(std::chrono::milliseconds a_Value)
 	tolua_pushnumber(m_LuaState, static_cast<lua_Number>(a_Value.count()));
 	m_NumCurrentFunctionArgs += 1;
 }
-
-
-
-
-
-/*
-void cLuaState::PushUserType(void * a_Object, const char * a_Type)
-{
-	ASSERT(IsValid());
-
-	tolua_pushusertype(m_LuaState, a_Object, a_Type);
-	m_NumCurrentFunctionArgs += 1;
-}
-*/
 
 
 
@@ -1024,7 +993,7 @@ cLuaState::cStackValue cLuaState::WalkToNamedGlobal(const AString & a_Name)
 		lua_pop(m_LuaState, 1);
 		return cStackValue();
 	}
-	return std::move(cStackValue(*this));
+	return cStackValue(*this);
 }
 
 
@@ -1177,6 +1146,39 @@ bool cLuaState::CheckParamNumber(int a_StartParam, int a_EndParam)
 	for (int i = a_StartParam; i <= a_EndParam; i++)
 	{
 		if (tolua_isnumber(m_LuaState, i, 0, &tolua_err))
+		{
+			continue;
+		}
+		// Not the correct parameter
+		lua_Debug entry;
+		VERIFY(lua_getstack(m_LuaState, 0,   &entry));
+		VERIFY(lua_getinfo (m_LuaState, "n", &entry));
+		AString ErrMsg = Printf("#ferror in function '%s'.", (entry.name != nullptr) ? entry.name : "?");
+		tolua_error(m_LuaState, ErrMsg.c_str(), &tolua_err);
+		return false;
+	}  // for i - Param
+	
+	// All params checked ok
+	return true;
+}
+
+
+
+
+
+bool cLuaState::CheckParamBool(int a_StartParam, int a_EndParam)
+{
+	ASSERT(IsValid());
+	
+	if (a_EndParam < 0)
+	{
+		a_EndParam = a_StartParam;
+	}
+	
+	tolua_Error tolua_err;
+	for (int i = a_StartParam; i <= a_EndParam; i++)
+	{
+		if (tolua_isboolean(m_LuaState, i, 0, &tolua_err))
 		{
 			continue;
 		}

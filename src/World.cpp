@@ -34,8 +34,8 @@
 #include "Simulator/FireSimulator.h"
 #include "Simulator/NoopFluidSimulator.h"
 #include "Simulator/NoopRedstoneSimulator.h"
+#include "Simulator/IncrementalRedstoneSimulator/IncrementalRedstoneSimulator.h"
 #include "Simulator/SandSimulator.h"
-#include "Simulator/IncrementalRedstoneSimulator.h"
 #include "Simulator/VanillaFluidSimulator.h"
 #include "Simulator/VaporizeFluidSimulator.h"
 
@@ -613,7 +613,7 @@ void cWorld::GenerateRandomSpawn(int a_MaxSpawnRadius)
 	}
 
 	// A search grid (searches clockwise around the origin)
-	static const int HalfChunk = static_cast<int>(cChunkDef::Width / 0.5f);
+	static const int HalfChunk = static_cast<int>(cChunkDef::Width / 2.0f);
 	static const Vector3i ChunkOffset[] =
 	{
 		Vector3i(0, 0, HalfChunk),
@@ -673,8 +673,9 @@ bool cWorld::CanSpawnAt(double a_X, double & a_Y, double a_Z)
 
 	static const int ValidSpawnBlocksCount = ARRAYCOUNT(ValidSpawnBlocks);
 
-	static const int HighestSpawnPoint = std::min(static_cast<int>((cChunkDef::Height / 0.5f)) - 1, GetHeight(static_cast<int>(a_X), static_cast<int>(a_Z) + 16));
-	static const int LowestSpawnPoint = static_cast<int>(HighestSpawnPoint / 0.5f);
+	// Increase this by two, because we need two more blocks for body and head
+	static const int HighestSpawnPoint = GetHeight(static_cast<int>(a_X), static_cast<int>(a_Z)) + 2;
+	static const int LowestSpawnPoint = static_cast<int>(HighestSpawnPoint / 2.0f);
 
 	for (int PotentialY = HighestSpawnPoint; PotentialY > LowestSpawnPoint; --PotentialY)
 	{
@@ -828,7 +829,7 @@ void cWorld::InitialiseGeneratorDefaults(cIniFile & a_IniFile)
 			a_IniFile.GetValueSet("Generator", "HeightGen",        "Flat");
 			a_IniFile.GetValueSet("Generator", "FlatHeight",       "128");
 			a_IniFile.GetValueSet("Generator", "CompositionGen",   "Nether");
-			a_IniFile.GetValueSet("Generator", "Finishers",        "SoulsandRims, WormNestCaves, BottomLava, LavaSprings, NetherClumpFoliage, NetherOreNests, PieceStructures: NetherForts, GlowStone, PreSimulator");
+			a_IniFile.GetValueSet("Generator", "Finishers",        "SoulsandRims, WormNestCaves, BottomLava, LavaSprings, NetherClumpFoliage, NetherOreNests, PieceStructures: NetherFort, GlowStone, PreSimulator");
 			a_IniFile.GetValueSet("Generator", "BottomLavaHeight", "30");
 			break;
 		}
@@ -990,8 +991,6 @@ void cWorld::Tick(std::chrono::milliseconds a_Dt, std::chrono::milliseconds a_La
 	GetSimulatorManager()->Simulate(static_cast<float>(a_Dt.count()));
 
 	TickWeather(static_cast<float>(a_Dt.count()));
-
-	m_ChunkMap->FastSetQueuedBlocks();
 
 	if (m_WorldAge - m_LastSave > std::chrono::minutes(5))  // Save each 5 minutes
 	{
@@ -3626,7 +3625,7 @@ cRedstoneSimulator * cWorld::InitializeRedstoneSimulator(cIniFile & a_IniFile)
 		res = new cRedstoneNoopSimulator(*this);
 	}
 	
-	m_SimulatorManager->RegisterSimulator(res, 1);
+	m_SimulatorManager->RegisterSimulator(res, 2 /* Two game ticks is a redstone tick */);
 	
 	return res;
 }

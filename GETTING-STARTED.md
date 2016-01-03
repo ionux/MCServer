@@ -34,7 +34,7 @@ You'll need the basic C++ build tools:
  * gcc (or clang or another C compiler)
  * g++ (or clang++ or another C++ compiler)
  * make
- 
+
 You'll also need CMake to generate the makefile to build from.
 
 **Windows:**
@@ -88,8 +88,8 @@ Basically, the process is:
 **Windows:**
 
 You need to first generate a solution file by executing `cmake .` on the commandline at the top-level folder of the repository, then just open the solution file in MSVC and build. Note that the first time after generating the solution, you will need to do extra setup in order to be able to fully debug in MSVC:
-- Set the startup project to Cuberite: right-click the MCServer project in the Solution Explorer and choose "Set as Startup Project".
-- Set the debugging folder: right-click the MCServer project in the Solution Explorer, choose "Properties". In the dialog, browse to "Configuration Properties" -> "Debugging" and set "Working Directory" to "../MCServer".
+- Set the startup project to Cuberite: right-click the Cuberite project in the Solution Explorer and choose "Set as Startup Project".
+- Set the debugging folder: right-click the Cuberite project in the Solution Explorer, choose "Properties". In the dialog, browse to "Configuration Properties" -> "Debugging" and set "Working Directory" to "../Server".
 
 How to Run
 ----------
@@ -101,10 +101,10 @@ Where to Get Started
 
 Issues that should be easy to get started with are tagged as [easy](https://github.com/cuberite/cuberite/issues?q=is%3Aopen+is%3Aissue+label%3Aeasy) in GitHub issues. Other good places to get started are:
 
- * Cleaning up some of the compiler warnings. (Check [Travis CI](http://travis-ci.org/cuberite/cuberite) for a list of them.) With clang, there are over 10000 lines of warnings to clean up.
+ * Cleaning up some of the compiler warnings. (Check [Travis CI](https://travis-ci.org/cuberite/cuberite) for a list of them.) With clang, there are over 10000 lines of warnings to clean up.
  *  Writing some plugins: They are written in lua, with excellent API documentation available via [APIDump](http://api-docs.cuberite.org). The [Core](https://github.com/cuberite/Core) plugin should also help quite a bit here.
 
 Special Things
 ---------------------
  * Make yourself familiar with the community. Visit the forums: http://forum.mc-server.org
- * Ask questions as much as you like, we're here to help :smiley: 
+ * Ask questions as much as you like, we're here to help :smiley:
